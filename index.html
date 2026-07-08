@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>PesoDigiuno</title>
+<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22PesoDigiuno%22,%22short_name%22:%22PesoDigiuno%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22%230f172a%22,%22theme_color%22:%22%230f172a%22}">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#0f172a; --bg2:#161f36; --card:#1b2340; --card2:#212a4b;
+    --text:#eef1fb; --muted:#8d97b8; --accent:#5b8def; --accent2:#7cc4ff;
+    --good:#3ecf8e; --warn:#f0a34e; --danger:#ef5b6b; --border:#2a3557;
+    --radius:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  body{padding-bottom:84px; min-height:100vh;}
+  header.top{position:sticky; top:0; z-index:20; background:rgba(15,23,42,.92);
+    backdrop-filter:blur(10px); padding:14px 18px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;}
+  header.top h1{font-size:17px; margin:0; font-weight:700; letter-spacing:.2px;}
+  header.top .status{font-size:12px; color:var(--muted); display:flex; align-items:center; gap:6px;}
+  .dot{width:7px; height:7px; border-radius:50%; background:var(--good);}
+  .dot.off{background:var(--danger);}
+  main{max-width:520px; margin:0 auto; padding:16px;}
+  .tabs{display:flex; gap:8px; margin-bottom:18px;}
+  .tab{flex:1; text-align:center; padding:10px; border-radius:12px; background:var(--card);
+    border:1px solid var(--border); color:var(--muted); font-size:14px; font-weight:600; cursor:pointer;}
+  .tab.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .view{display:none;} .view.active{display:block;}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px; margin-bottom:14px;}
+  .card h2{font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted);
+    margin:0 0 14px 0; font-weight:700;}
+  .fast-hero{text-align:center; padding:26px 18px;}
+  .fast-hero .label{font-size:13px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px;}
+  .fast-hero .timer{font-size:44px; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:.5px;}
+  .fast-hero .timer.fasting{color:var(--accent2);}
+  .fast-hero .timer.eating{color:var(--warn);}
+  .fast-hero .since{font-size:13px; color:var(--muted); margin-top:8px;}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    border:none; border-radius:14px; padding:14px 22px; font-size:15px; font-weight:700;
+    cursor:pointer; width:100%; margin-top:18px;}
+  .btn-start{background:var(--accent); color:#fff;}
+  .btn-stop{background:var(--danger); color:#fff;}
+  .btn-secondary{background:var(--card2); color:var(--text); border:1px solid var(--border);}
+  .btn-small{width:auto; padding:9px 14px; font-size:13px; margin-top:0;}
+  .row{display:flex; gap:10px;}
+  .field{flex:1; display:flex; flex-direction:column; gap:4px; margin-bottom:12px;}
+  .field label{font-size:12px; color:var(--muted); font-weight:600;}
+  .field input, .field select{background:var(--card2); border:1px solid var(--border); color:var(--text);
+    border-radius:10px; padding:11px 12px; font-size:15px; width:100%;}
+  .field input:focus, .field select:focus{outline:none; border-color:var(--accent);}
+  .modal-backdrop{position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:50; display:none;
+    align-items:flex-end; justify-content:center;}
+  .modal-backdrop.active{display:flex;}
+  .modal{background:var(--card); border-radius:20px 20px 0 0; padding:20px; width:100%; max-width:520px;
+    border-top:1px solid var(--border); animation:slideup .2s ease;}
+  @keyframes slideup{from{transform:translateY(30px); opacity:0;} to{transform:translateY(0); opacity:1;}}
+  .modal h3{margin:0 0 16px 0; font-size:16px;}
+  .modal-actions{display:flex; gap:10px; margin-top:6px;}
+  .modal-actions .btn{margin-top:0;}
+  .bmi-badge{display:inline-block; padding:4px 10px; border-radius:20px; font-size:12px; font-weight:700; margin-top:6px;}
+  .bmi-under{background:#f0a34e30; color:#f0a34e;}
+  .bmi-normal{background:#3ecf8e30; color:#3ecf8e;}
+  .bmi-over{background:#f0a34e30; color:#f0a34e;}
+  .bmi-obese{background:#ef5b6b30; color:#ef5b6b;}
+  .weight-current{display:flex; align-items:baseline; gap:10px;}
+  .weight-current .num{font-size:36px; font-weight:800;}
+  .weight-current .unit{font-size:15px; color:var(--muted);}
+  .period-select{display:flex; gap:6px; margin-bottom:12px;}
+  .period-select button{flex:1; padding:8px; border-radius:10px; border:1px solid var(--border);
+    background:var(--card2); color:var(--muted); font-size:12px; font-weight:600; cursor:pointer;}
+  .period-select button.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+  svg.chart{width:100%; height:180px; display:block;}
+  .hist-list{display:flex; flex-direction:column; gap:0;}
+  .hist-item{display:flex; justify-content:space-between; align-items:center; padding:12px 0;
+    border-bottom:1px solid var(--border); font-size:14px;}
+  .hist-item:last-child{border-bottom:none;}
+  .hist-item .meta{color:var(--muted); font-size:12px; margin-top:2px;}
+  .hist-item .val{font-weight:700; font-size:15px;}
+  .hist-item .actions{display:flex; gap:8px;}
+  .icon-btn{background:none; border:none; color:var(--muted); font-size:17px; cursor:pointer; padding:4px;}
+  .icon-btn:hover{color:var(--text);}
+  .empty{text-align:center; color:var(--muted); padding:30px 10px; font-size:14px;}
+  .settings-row{display:flex; justify-content:space-between; align-items:center; padding:12px 0;
+    border-bottom:1px solid var(--border);}
+  .settings-row:last-child{border-bottom:none;}
+  .settings-row .lbl{font-size:14px;}
+  .settings-row .lbl small{display:block; color:var(--muted); font-size:12px; margin-top:2px;}
+  .seg{display:flex; background:var(--card2); border-radius:10px; padding:3px; border:1px solid var(--border);}
+  .seg button{border:none; background:none; color:var(--muted); padding:7px 12px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;}
+  .seg button.active{background:var(--accent); color:#fff;}
+  .toast{position:fixed; bottom:90px; left:50%; transform:translateX(-50%); background:var(--card2);
+    border:1px solid var(--border); color:var(--text); padding:10px 18px; border-radius:12px; font-size:13px;
+    z-index:60; opacity:0; pointer-events:none; transition:opacity .2s;}
+  .toast.show{opacity:1;}
+  .bmi-bar-wrap{margin-top:14px; position:relative; padding-top:16px;}
+  .bmi-bar{height:10px; border-radius:6px; width:100%; position:relative;
+    background:linear-gradient(to right,
+      #1e3a8a 0%, #1e3a8a 3.6%,
+      #2563eb 3.6%, #2563eb 7.1%,
+      #38bdf8 7.1%, #38bdf8 16.1%,
+      #3ecf8e 16.1%, #3ecf8e 39.3%,
+      #d4a017 39.3%, #d4a017 57.1%,
+      #f0a34e 57.1%, #f0a34e 75%,
+      #e0692a 75%, #e0692a 92.9%,
+      #ef5b6b 92.9%, #ef5b6b 100%);}
+  .bmi-marker{position:absolute; top:0; transform:translateX(-50%); font-size:0; width:0; height:0;
+    border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #fff;}
+  .bmi-scale{display:flex; justify-content:space-between; font-size:9px; color:var(--muted); margin-top:4px;}
+  .tooltip-pt{position:absolute; background:var(--card2); border:1px solid var(--border); color:var(--text);
+    padding:6px 10px; border-radius:8px; font-size:12px; pointer-events:none; z-index:5; white-space:nowrap;
+    transform:translate(-50%,-115%); box-shadow:0 4px 12px rgba(0,0,0,.3);}
+  .chart-wrap{position:relative;}
+  .load-more-btn{width:100%; padding:10px; margin-top:8px; border-radius:10px; border:1px solid var(--border);
+    background:var(--card2); color:var(--muted); font-size:13px; font-weight:600; cursor:pointer;}
+  /* ── LOGIN SCREEN (stesso stile di CaliMat) ── */
+  #loginScreen{display:none;min-height:100vh;padding:48px 24px 32px;flex-direction:column;justify-content:center;align-items:center;background:var(--bg)}
+  #loginScreen.active{display:flex}
+  .ls-logo{font-size:36px;font-weight:900;letter-spacing:-1px;margin-bottom:8px}.ls-logo span{color:var(--accent)}
+  .ls-sub{font-size:14px;color:var(--muted);margin-bottom:40px;font-weight:500}
+  .ls-card{width:100%;max-width:360px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px}
+  .ls-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:22px}
+  .ls-tab{flex:1;padding:9px;background:none;border:none;color:var(--muted);font-size:14px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+  .ls-tab.on{color:var(--accent);border-bottom:2px solid var(--accent)}
+  .ls-err{font-size:13px;color:var(--danger);margin-bottom:12px;padding:9px 12px;background:rgba(239,91,107,.1);border-radius:8px;border:1px solid rgba(239,91,107,.25);display:none}
+  .ls-ok{font-size:13px;color:var(--good);margin-bottom:12px;padding:9px 12px;background:rgba(62,207,142,.1);border-radius:8px;border:1px solid rgba(62,207,142,.25);display:none}
+  .ls-spinner{width:20px;height:20px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .ig{margin-bottom:14px}
+  .il{font-size:12px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:6px;display:block}
+  .inf{width:100%;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:15px;transition:border .12s}
+  .inf:focus{outline:none;border-color:var(--accent)}
+  .user-pill{display:flex;align-items:center;gap:7px;background:var(--card2);border:1px solid var(--border);
+    border-radius:20px;padding:6px 12px;cursor:pointer;font-size:12px;color:var(--muted)}
+  .sync-dot2{width:7px;height:7px;border-radius:50%;background:var(--good)}
+  .sync-dot2.syncing{background:var(--warn)}
+  .sync-dot2.error{background:var(--danger)}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen">
+  <div class="ls-logo">Peso<span>Digiuno</span></div>
+  <div class="ls-sub">Peso corporeo e digiuno intermittente</div>
+  <div class="ls-card">
+    <div class="ls-tabs">
+      <button class="ls-tab on" id="tabLogin" onclick="lsShowTab('login')">Accedi</button>
+      <button class="ls-tab" id="tabSignup" onclick="lsShowTab('signup')">Registrati</button>
+    </div>
+    <div id="lsErr" class="ls-err"></div>
+    <div id="lsOk" class="ls-ok"></div>
+    <div id="formLogin">
+      <div class="ig"><label class="il">Email</label><input class="inf" type="email" id="liEmail" placeholder="la-tua@email.com" autocomplete="email"></div>
+      <div class="ig"><label class="il">Password</label><input class="inf" type="password" id="liPw" placeholder="••••••••" autocomplete="current-password"></div>
+      <button class="btn btn-start" id="btnLogin" onclick="doLogin()" style="margin-top:4px">
+        <div class="ls-spinner" id="spLogin"></div>
+        <span id="lblLogin">Accedi</span>
+      </button>
+    </div>
+    <div id="formSignup" style="display:none">
+      <div class="ig"><label class="il">Email</label><input class="inf" type="email" id="suEmail" placeholder="la-tua@email.com" autocomplete="email"></div>
+      <div class="ig"><label class="il">Password</label><input class="inf" type="password" id="suPw" placeholder="min. 6 caratteri" autocomplete="new-password"></div>
+      <div class="ig"><label class="il">Conferma password</label><input class="inf" type="password" id="suPw2" placeholder="••••••••" autocomplete="new-password"></div>
+      <button class="btn btn-start" id="btnSignup" onclick="doSignup()" style="margin-top:4px">
+        <div class="ls-spinner" id="spSignup"></div>
+        <span id="lblSignup">Crea account</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- APP (nascosta finché non si fa login) -->
+<div id="appRoot" style="display:none">
+
+<header class="top">
+  <h1>PesoDigiuno</h1>
+  <div class="user-pill" id="userPill" onclick="document.querySelector('.tab[data-view=settings]').click()">
+    <span class="sync-dot2" id="syncDot2"></span>
+    <span id="userEmail" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+  </div>
+</header>
+
+<main>
+  <div class="tabs">
+    <div class="tab active" data-view="fast"><i class="ti ti-hourglass"></i> Digiuno</div>
+    <div class="tab" data-view="weight"><i class="ti ti-scale"></i> Peso</div>
+    <div class="tab" data-view="settings"><i class="ti ti-settings"></i> Impostazioni</div>
+  </div>
+
+  <!-- DIGIUNO -->
+  <section class="view active" id="view-fast">
+    <div class="card fast-hero">
+      <div class="label" id="fastLabel">Non stai digiunando</div>
+      <div class="timer eating" id="fastTimer">00:00:00</div>
+      <div class="since" id="fastSince"></div>
+      <button class="btn btn-start" id="fastToggleBtn"><i class="ti ti-player-play"></i> Inizia digiuno</button>
+    </div>
+
+    <div class="card">
+      <h2>Storico digiuni</h2>
+      <div class="period-select" id="fastPeriodSel">
+        <button data-p="day">Giorno</button>
+        <button data-p="week" class="active">Settimana</button>
+        <button data-p="month">Mese</button>
+      </div>
+      <div class="chart-wrap"><svg class="chart" id="fastChart" viewBox="0 0 320 180"></svg></div>
+    </div>
+
+    <div class="card">
+      <h2>Cronologia</h2>
+      <div class="hist-list" id="fastHistList"><div class="empty">Nessun digiuno registrato</div></div>
+    </div>
+  </section>
+
+  <!-- PESO -->
+  <section class="view" id="view-weight">
+    <div class="card">
+      <h2>Peso attuale</h2>
+      <div class="weight-current">
+        <span class="num" id="weightCurrentNum">--</span>
+        <span class="unit" id="weightCurrentUnit">kg</span>
+      </div>
+      <div id="bmiBadgeWrap"></div>
+      <div id="bmiBarWrap"></div>
+      <button class="btn btn-start" id="addWeightBtn"><i class="ti ti-plus"></i> Aggiungi peso</button>
+    </div>
+
+    <div class="card">
+      <h2>Grafico</h2>
+      <div class="period-select" id="weightPeriodSel">
+        <button data-p="day" class="active">Giorno</button>
+        <button data-p="week">Settimana</button>
+        <button data-p="month">Mese</button>
+      </div>
+      <div class="chart-wrap" id="weightChartWrap"><svg class="chart" id="weightChart" viewBox="0 0 320 180"></svg></div>
+    </div>
+
+    <div class="card">
+      <h2>Cronologia</h2>
+      <div class="hist-list" id="weightHistList"><div class="empty">Nessuna misurazione registrata</div></div>
+      <button class="load-more-btn" id="weightLoadMoreBtn" style="display:none;">Altro</button>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="view" id="view-settings">
+    <div class="card">
+      <h2>Unità di misura</h2>
+      <div class="settings-row">
+        <div class="lbl">Sistema<small>Cambia unità peso/altezza</small></div>
+        <div class="seg" id="unitSeg">
+          <button data-u="metric" class="active">kg / cm</button>
+          <button data-u="imperial">lb / ft-in</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Altezza</h2>
+      <div class="field" id="heightFieldWrap">
+        <label>Altezza (cm)</label>
+        <input type="number" id="heightInput" placeholder="es. 178">
+      </div>
+      <button class="btn btn-start" id="saveHeightBtn"><i class="ti ti-check"></i> Salva altezza</button>
+    </div>
+    <div class="card">
+      <h2>Dati</h2>
+      <div class="settings-row">
+        <div class="lbl">Esporta CSV<small>Peso e digiuni</small></div>
+        <button class="btn btn-secondary btn-small" id="exportBtn">Esporta</button>
+      </div>
+      <div class="settings-row">
+        <div class="lbl">Importa CSV<small>File esportato da qui</small></div>
+        <button class="btn btn-secondary btn-small" id="importBtn">Importa</button>
+        <input type="file" id="importFileInput" accept=".csv" style="display:none;">
+      </div>
+    </div>
+    <div class="card">
+      <h2>Account</h2>
+      <div class="settings-row">
+        <div class="lbl">Accesso effettuato come<small id="settingsEmail"></small></div>
+        <button class="btn btn-secondary btn-small" onclick="doLogout()">Esci</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Modal: conferma orario -->
+<div class="modal-backdrop" id="timeModal">
+  <div class="modal">
+    <h3 id="timeModalTitle">Conferma orario</h3>
+    <div class="row">
+      <div class="field">
+        <label>Data</label>
+        <input type="date" id="timeModalDate">
+      </div>
+      <div class="field">
+        <label>Ora</label>
+        <input type="time" id="timeModalTime" step="60">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="timeModalCancel">Annulla</button>
+      <button class="btn btn-start" id="timeModalConfirm">Conferma</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: aggiungi peso -->
+<div class="modal-backdrop" id="weightModal">
+  <div class="modal">
+    <h3>Nuova misurazione</h3>
+    <div class="field">
+      <label id="weightModalLabel">Peso (kg)</label>
+      <input type="number" id="weightModalVal" step="0.1" placeholder="es. 72.4">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Data</label>
+        <input type="date" id="weightModalDate">
+      </div>
+      <div class="field">
+        <label>Ora</label>
+        <input type="time" id="weightModalTime" step="60">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="weightModalCancel">Annulla</button>
+      <button class="btn btn-start" id="weightModalConfirm">Salva</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+</div> <!-- /appRoot -->
+
+<script>
+/* ============ CONFIG ============ */
+const SUPABASE_URL = 'https://edlvmkjctzhqoswpppds.supabase.co/';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVkbHZta2pjdHpocW9zd3BwcGRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNjEyMDEsImV4cCI6MjA5NjczNzIwMX0.Oq0TyYWG4LotZhH57LQtklUdVho_kQ15KlSs8KGO2AM';
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+let _currentUser = null;
+
+/* ============ STATE / STORAGE ============ */
+const LS = {
+  fasts: "pd_fasts", // {id, start_at, end_at}
+  weights: "pd_weights", // {id, weight_kg, at}
+  height: "pd_height_cm",
+  unit: "pd_unit", // metric | imperial
+  activeFast: "pd_active_fast" // {start_at} or null
+};
+
+function lsGet(k, def){ try{ const v = localStorage.getItem(k); return v?JSON.parse(v):def; }catch(e){ return def; } }
+function lsSet(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+
+let state = {
+  fasts: lsGet(LS.fasts, []),
+  weights: lsGet(LS.weights, []),
+  height: lsGet(LS.height, null),
+  unit: lsGet(LS.unit, "metric"),
+  activeFast: lsGet(LS.activeFast, null),
+  lastFastEnd: lsGet("pd_last_fast_end", null)
+};
+
+let timeModalCallback = null;
+let fastTimerInterval = null;
+
+/* ============ UTILS ============ */
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function pad(n){ return n.toString().padStart(2,"0"); }
+function fmtDuration(ms){
+  if(ms<0) ms=0;
+  const s = Math.floor(ms/1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return `${pad(h)}:${pad(m)}:${pad(sec)}`;
+}
+function fmtDurationShort(ms){
+  const s = Math.floor(ms/1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+  if(h>0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+function toISO(dateStr, timeStr){ return new Date(`${dateStr}T${timeStr}:00`).toISOString(); }
+function nowDateStr(){ const d=new Date(); return d.toISOString().slice(0,10); }
+function todayLocalStr(){
+  const d=new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+function nowTimeStr(){ const d=new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function fmtDateTime(iso){
+  const d = new Date(iso);
+  return d.toLocaleString("it-IT", {day:"2-digit", month:"2-digit", year:"2-digit", hour:"2-digit", minute:"2-digit"});
+}
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 2000);
+}
+function kgToLb(kg){ return kg*2.20462; }
+function lbToKg(lb){ return lb/2.20462; }
+function cmToFtIn(cm){ const totalIn = cm/2.54; const ft=Math.floor(totalIn/12); const inch=Math.round(totalIn%12); return {ft,inch}; }
+function ftInToCm(ft,inch){ return (ft*12+inch)*2.54; }
+
+/* ============ TABS ============ */
+document.querySelectorAll(".tab").forEach(tab=>{
+  tab.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("view-"+tab.dataset.view).classList.add("active");
+    if(tab.dataset.view==="fast") renderFastChart();
+    if(tab.dataset.view==="weight") renderWeightChart();
+  });
+});
+
+/* ============ TIME MODAL (generic confirm) ============ */
+function openTimeModal(title, cb, prefillISO){
+  document.getElementById("timeModalTitle").textContent = title;
+  const dateInput = document.getElementById("timeModalDate");
+  const timeInput = document.getElementById("timeModalTime");
+  dateInput.max = todayLocalStr();
+  if(prefillISO){
+    const d = new Date(prefillISO);
+    dateInput.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    timeInput.value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } else {
+    dateInput.value = nowDateStr();
+    timeInput.value = nowTimeStr();
+  }
+  timeModalCallback = cb;
+  document.getElementById("timeModal").classList.add("active");
+}
+document.getElementById("timeModalCancel").addEventListener("click", ()=>{
+  document.getElementById("timeModal").classList.remove("active");
+  timeModalCallback = null;
+});
+document.getElementById("timeModalConfirm").addEventListener("click", ()=>{
+  const d = document.getElementById("timeModalDate").value;
+  const t = document.getElementById("timeModalTime").value;
+  if(!d||!t){ showToast("Compila data e ora"); return; }
+  const iso = toISO(d,t);
+  if(new Date(iso) > new Date()){ showToast("Non puoi selezionare una data futura"); return; }
+  document.getElementById("timeModal").classList.remove("active");
+  if(timeModalCallback) timeModalCallback(iso);
+  timeModalCallback = null;
+});
+
+/* ============ FASTING LOGIC ============ */
+function renderFastHero(){
+  const label = document.getElementById("fastLabel");
+  const timer = document.getElementById("fastTimer");
+  const since = document.getElementById("fastSince");
+  const btn = document.getElementById("fastToggleBtn");
+
+  if(state.activeFast){
+    label.textContent = "Digiuno in corso";
+    timer.className = "timer fasting";
+    const start = new Date(state.activeFast.start_at);
+    since.textContent = "Iniziato: " + fmtDateTime(state.activeFast.start_at);
+    btn.className = "btn btn-stop";
+    btn.innerHTML = '<i class="ti ti-player-stop"></i> Termina digiuno';
+    updateFastTimer();
+  } else {
+    label.textContent = "Non stai digiunando";
+    timer.className = "timer eating";
+    if(state.lastFastEnd){
+      since.textContent = "Ultimo digiuno terminato: " + fmtDateTime(state.lastFastEnd);
+    } else {
+      since.textContent = "";
+    }
+    btn.className = "btn btn-start";
+    btn.innerHTML = '<i class="ti ti-player-play"></i> Inizia digiuno';
+    updateFastTimer();
+  }
+}
+
+function updateFastTimer(){
+  const timer = document.getElementById("fastTimer");
+  if(state.activeFast){
+    const start = new Date(state.activeFast.start_at).getTime();
+    timer.textContent = fmtDuration(Date.now()-start);
+  } else if(state.lastFastEnd){
+    const end = new Date(state.lastFastEnd).getTime();
+    timer.textContent = fmtDuration(Date.now()-end);
+  } else {
+    timer.textContent = "00:00:00";
+  }
+}
+
+document.getElementById("fastToggleBtn").addEventListener("click", ()=>{
+  if(state.activeFast){
+    // stop
+    openTimeModal("Fine digiuno", async (iso)=>{
+      const startISO = state.activeFast.start_at;
+      if(new Date(iso) <= new Date(startISO)){ showToast("L'orario di fine deve essere dopo l'inizio"); return; }
+      const fast = {id: uid(), start_at: startISO, end_at: iso};
+      state.fasts.unshift(fast);
+      state.activeFast = null;
+      state.lastFastEnd = iso;
+      lsSet(LS.fasts, state.fasts);
+      lsSet(LS.activeFast, null);
+      lsSet("pd_last_fast_end", iso);
+      renderFastHero(); renderFastHistory(); renderFastChart();
+      showToast("Digiuno salvato");
+      if(sb) await syncFastToSupabase(fast);
+    });
+  } else {
+    // start
+    openTimeModal("Inizio digiuno", async (iso)=>{
+      state.activeFast = {start_at: iso};
+      lsSet(LS.activeFast, state.activeFast);
+      renderFastHero();
+      showToast("Digiuno iniziato");
+    });
+  }
+});
+
+function renderFastHistory(){
+  const list = document.getElementById("fastHistList");
+  if(state.fasts.length===0){ list.innerHTML = '<div class="empty">Nessun digiuno registrato</div>'; return; }
+  list.innerHTML = state.fasts.slice(0,50).map(f=>{
+    const dur = new Date(f.end_at) - new Date(f.start_at);
+    return `<div class="hist-item">
+      <div>
+        <div class="val">${fmtDurationShort(dur)}</div>
+        <div class="meta">${fmtDateTime(f.start_at)} → ${fmtDateTime(f.end_at)}</div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn" onclick="editFastStart('${f.id}')"><i class="ti ti-edit"></i></button>
+        <button class="icon-btn" onclick="deleteFast('${f.id}')"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>`;
+  }).join("");
+}
+window.deleteFast = function(id){
+  state.fasts = state.fasts.filter(f=>f.id!==id);
+  lsSet(LS.fasts, state.fasts);
+  renderFastHistory(); renderFastChart();
+  if(sb && _currentUser) sb.from("fasting_logs").delete().eq("id", id).then(()=>{});
+};
+window.editFastStart = function(id){
+  const f = state.fasts.find(x=>x.id===id);
+  if(!f) return;
+  openTimeModal("Modifica inizio digiuno", (iso)=>{
+    if(new Date(iso) >= new Date(f.end_at)){ showToast("L'inizio deve essere prima della fine"); return; }
+    f.start_at = iso;
+    lsSet(LS.fasts, state.fasts);
+    renderFastHistory(); renderFastChart();
+    showToast("Digiuno aggiornato");
+    if(sb) syncFastToSupabase(f, true);
+  }, f.start_at);
+  // after choosing start, offer to edit end too
+  const origCb = timeModalCallback;
+  timeModalCallback = (iso)=>{
+    origCb(iso);
+    setTimeout(()=> editFastEnd(id), 250);
+  };
+};
+window.editFastEnd = function(id){
+  const f = state.fasts.find(x=>x.id===id);
+  if(!f) return;
+  openTimeModal("Modifica fine digiuno", (iso)=>{
+    if(new Date(iso) <= new Date(f.start_at)){ showToast("La fine deve essere dopo l'inizio"); return; }
+    f.end_at = iso;
+    lsSet(LS.fasts, state.fasts);
+    renderFastHistory(); renderFastChart();
+    showToast("Digiuno aggiornato");
+    if(sb) syncFastToSupabase(f, true);
+  }, f.end_at);
+};
+
+let fastPeriod = "week";
+document.getElementById("fastPeriodSel").addEventListener("click", (e)=>{
+  const b = e.target.closest("button"); if(!b) return;
+  document.querySelectorAll("#fastPeriodSel button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active");
+  fastPeriod = b.dataset.p;
+  renderFastChart();
+});
+
+function renderFastChart(){
+  const svg = document.getElementById("fastChart");
+  const wrap = document.getElementById("fastPeriodSel").closest(".card").querySelector(".chart-wrap");
+  const now = new Date();
+  let cutoff;
+  if(fastPeriod==="day") cutoff = new Date(now-1*86400000);
+  else if(fastPeriod==="week") cutoff = new Date(now-7*86400000);
+  else cutoff = new Date(now-30*86400000);
+
+  const data = state.fasts.filter(f=>new Date(f.start_at)>=cutoff)
+    .sort((a,b)=>new Date(a.start_at)-new Date(b.start_at));
+
+  wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
+
+  if(data.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
+
+  const durations = data.map(f=> (new Date(f.end_at)-new Date(f.start_at))/3600000 );
+  const maxH = Math.max(...durations, 16);
+  const W=320,H=180,padL=30,padR=10,padT=20,padB=28, barGap=6;
+  const n = data.length;
+  const plotW = W-padL-padR;
+  const barW = Math.max(6, plotW/n - barGap);
+
+  let bars = "";
+  data.forEach((f,i)=>{
+    const h = durations[i];
+    const barH = (h/(maxH*1.15))*(H-padT-padB);
+    const x = padL + i*(plotW/n) + (plotW/n - barW)/2;
+    const y = H-padB-barH;
+    const d = new Date(f.start_at);
+    const dayLbl = `${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3" fill="#5b8def" data-h="${h.toFixed(1)}" data-lbl="${fmtDateTime(f.start_at)}" class="fastbar"/>`;
+    if(n<=10 || i%Math.ceil(n/8)===0){
+      bars += `<text x="${(x+barW/2).toFixed(1)}" y="${H-10}" fill="#8d97b8" font-size="8" text-anchor="middle">${dayLbl}</text>`;
+    }
+  });
+  const gridY = H-padB;
+  bars += `<line x1="${padL}" y1="${gridY}" x2="${W-padR}" y2="${gridY}" stroke="#2a3557"/>`;
+  bars += `<text x="4" y="${padT}" fill="#8d97b8" font-size="9">${maxH.toFixed(0)}h</text>`;
+  bars += `<text x="4" y="${gridY}" fill="#8d97b8" font-size="9">0h</text>`;
+  svg.innerHTML = bars;
+
+  svg.querySelectorAll(".fastbar").forEach(rect=>{
+    const show = (ev)=>{
+      wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
+      const rectBox = rect.getBoundingClientRect();
+      const wrapBox = wrap.getBoundingClientRect();
+      const tip = document.createElement("div");
+      tip.className = "tooltip-pt";
+      tip.textContent = `${rect.dataset.h}h · ${rect.dataset.lbl}`;
+      tip.style.left = (rectBox.left - wrapBox.left + rectBox.width/2) + "px";
+      tip.style.top = (rectBox.top - wrapBox.top) + "px";
+      wrap.appendChild(tip);
+      clearTimeout(rect._t);
+      rect._t = setTimeout(()=>tip.remove(), 2500);
+    };
+    rect.addEventListener("touchstart", show, {passive:true});
+    rect.addEventListener("mouseenter", show);
+  });
+}
+
+/* ============ WEIGHT LOGIC ============ */
+function displayWeight(kg){
+  if(state.unit==="imperial") return kgToLb(kg).toFixed(1);
+  return kg.toFixed(1);
+}
+function weightUnitLabel(){ return state.unit==="imperial" ? "lb" : "kg"; }
+
+function calcBMI(kg, heightCm){
+  if(!heightCm) return null;
+  const m = heightCm/100;
+  return kg/(m*m);
+}
+function bmiClass(bmi){
+  if(bmi<18.5) return {cls:"bmi-under", label:"Sottopeso"};
+  if(bmi<25) return {cls:"bmi-normal", label:"Normopeso"};
+  if(bmi<30) return {cls:"bmi-over", label:"Sovrappeso"};
+  return {cls:"bmi-obese", label:"Obesità"};
+}
+
+function renderWeightCard(){
+  const num = document.getElementById("weightCurrentNum");
+  const unit = document.getElementById("weightCurrentUnit");
+  unit.textContent = weightUnitLabel();
+  const badgeWrap = document.getElementById("bmiBadgeWrap");
+  const barWrap = document.getElementById("bmiBarWrap");
+  if(state.weights.length===0){
+    num.textContent = "--";
+    badgeWrap.innerHTML = "";
+    barWrap.innerHTML = "";
+    return;
+  }
+  const latest = state.weights[0];
+  num.textContent = displayWeight(latest.weight_kg);
+  if(state.height){
+    const bmi = calcBMI(latest.weight_kg, state.height);
+    const info = bmiClass(bmi);
+    badgeWrap.innerHTML = `<span class="bmi-badge ${info.cls}">BMI ${bmi.toFixed(1)} · ${info.label}</span>`;
+    // scale 14 to 42
+    const clamped = Math.min(Math.max(bmi,14),42);
+    const pct = ((clamped-14)/(42-14))*100;
+    barWrap.innerHTML = `
+      <div class="bmi-bar-wrap">
+        <div class="bmi-marker" style="left:${pct}%"></div>
+        <div class="bmi-bar"></div>
+        <div class="bmi-scale"><span>15</span><span>18.5</span><span>25</span><span>30</span><span>35</span><span>40</span></div>
+      </div>`;
+  } else {
+    badgeWrap.innerHTML = `<span class="bmi-badge" style="background:#2a355780;color:#8d97b8">Imposta altezza per BMI</span>`;
+    barWrap.innerHTML = "";
+  }
+}
+
+let weightHistVisible = 3;
+function renderWeightHistory(){
+  const list = document.getElementById("weightHistList");
+  const moreBtn = document.getElementById("weightLoadMoreBtn");
+  if(state.weights.length===0){
+    list.innerHTML = '<div class="empty">Nessuna misurazione registrata</div>';
+    moreBtn.style.display = "none";
+    return;
+  }
+  const shown = state.weights.slice(0, weightHistVisible);
+  list.innerHTML = shown.map(w=>{
+    return `<div class="hist-item">
+      <div>
+        <div class="val">${displayWeight(w.weight_kg)} ${weightUnitLabel()}</div>
+        <div class="meta">${fmtDateTime(w.at)}</div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn" onclick="editWeight('${w.id}')"><i class="ti ti-edit"></i></button>
+        <button class="icon-btn" onclick="deleteWeight('${w.id}')"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>`;
+  }).join("");
+  moreBtn.style.display = weightHistVisible < state.weights.length ? "block" : "none";
+}
+document.getElementById("weightLoadMoreBtn").addEventListener("click", ()=>{
+  weightHistVisible += 5;
+  renderWeightHistory();
+});
+window.deleteWeight = function(id){
+  state.weights = state.weights.filter(w=>w.id!==id);
+  lsSet(LS.weights, state.weights);
+  renderWeightHistory(); renderWeightChart(); renderWeightCard();
+  if(sb && _currentUser) sb.from("weight_logs").delete().eq("id", id).then(()=>{});
+};
+window.editWeight = function(id){
+  const w = state.weights.find(x=>x.id===id);
+  if(!w) return;
+  editingWeightId = id;
+  document.getElementById("weightModalLabel").textContent = `Peso (${weightUnitLabel()})`;
+  document.getElementById("weightModalVal").value = state.unit==="imperial" ? kgToLb(w.weight_kg).toFixed(1) : w.weight_kg.toFixed(1);
+  const d = new Date(w.at);
+  document.getElementById("weightModalDate").value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  document.getElementById("weightModalDate").max = todayLocalStr();
+  document.getElementById("weightModalTime").value = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  document.getElementById("weightModal").classList.add("active");
+};
+
+let editingWeightId = null;
+document.getElementById("addWeightBtn").addEventListener("click", ()=>{
+  editingWeightId = null;
+  document.getElementById("weightModalLabel").textContent = `Peso (${weightUnitLabel()})`;
+  document.getElementById("weightModalVal").value = "";
+  document.getElementById("weightModalDate").value = nowDateStr();
+  document.getElementById("weightModalDate").max = todayLocalStr();
+  document.getElementById("weightModalTime").value = nowTimeStr();
+  document.getElementById("weightModal").classList.add("active");
+});
+document.getElementById("weightModalCancel").addEventListener("click", ()=>{
+  document.getElementById("weightModal").classList.remove("active");
+  editingWeightId = null;
+});
+document.getElementById("weightModalConfirm").addEventListener("click", async ()=>{
+  const valRaw = parseFloat(document.getElementById("weightModalVal").value);
+  const d = document.getElementById("weightModalDate").value;
+  const t = document.getElementById("weightModalTime").value;
+  if(!valRaw || !d || !t){ showToast("Compila tutti i campi"); return; }
+  const iso = toISO(d,t);
+  if(new Date(iso) > new Date()){ showToast("Non puoi selezionare una data futura"); return; }
+  const kg = state.unit==="imperial" ? lbToKg(valRaw) : valRaw;
+
+  if(editingWeightId){
+    const w = state.weights.find(x=>x.id===editingWeightId);
+    if(w){ w.weight_kg = kg; w.at = iso; }
+    state.weights.sort((a,b)=> new Date(b.at)-new Date(a.at));
+    lsSet(LS.weights, state.weights);
+    document.getElementById("weightModal").classList.remove("active");
+    renderWeightCard(); renderWeightHistory(); renderWeightChart();
+    showToast("Peso aggiornato");
+    if(sb && w) await syncWeightToSupabase(w, true);
+    editingWeightId = null;
+    return;
+  }
+
+  const w = {id: uid(), weight_kg: kg, at: iso};
+  state.weights.unshift(w);
+  state.weights.sort((a,b)=> new Date(b.at)-new Date(a.at));
+  lsSet(LS.weights, state.weights);
+  document.getElementById("weightModal").classList.remove("active");
+  renderWeightCard(); renderWeightHistory(); renderWeightChart();
+  showToast("Peso salvato");
+  if(sb) await syncWeightToSupabase(w);
+});
+
+let weightPeriod = "day";
+document.getElementById("weightPeriodSel").addEventListener("click", (e)=>{
+  const b = e.target.closest("button"); if(!b) return;
+  document.querySelectorAll("#weightPeriodSel button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active");
+  weightPeriod = b.dataset.p;
+  renderWeightChart();
+});
+
+function renderWeightChart(){
+  const svg = document.getElementById("weightChart");
+  const wrap = document.getElementById("weightChartWrap");
+  wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
+  if(state.weights.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
+
+  const sorted = [...state.weights].sort((a,b)=>new Date(a.at)-new Date(b.at));
+  let points = [];
+  if(weightPeriod==="day"){
+    points = sorted.map(w=>({x:new Date(w.at), y:w.weight_kg}));
+  } else {
+    const groups = {};
+    sorted.forEach(w=>{
+      const d = new Date(w.at);
+      let key;
+      if(weightPeriod==="week"){
+        const monday = new Date(d); monday.setDate(d.getDate()-((d.getDay()+6)%7));
+        key = monday.toISOString().slice(0,10);
+      } else {
+        key = d.toISOString().slice(0,7);
+      }
+      if(!groups[key]) groups[key]=[];
+      groups[key].push({w:w.weight_kg, d});
+    });
+    points = Object.keys(groups).sort().map(k=>{
+      const arr = groups[k];
+      const avg = arr.reduce((a,b)=>a+b.w,0)/arr.length;
+      return {x: new Date(k), y: avg};
+    });
+  }
+
+  if(points.length===0){ svg.innerHTML=''; return; }
+  const W=320,H=180,padL=34,padR=12,padT=16,padB=26;
+  const ys = points.map(p=>p.y);
+  let minY = Math.min(...ys), maxY = Math.max(...ys);
+  if(minY===maxY){ minY-=1; maxY+=1; }
+  const margin = (maxY-minY)*0.15 || 1;
+  minY -= margin; maxY += margin;
+  const rangeY = maxY-minY;
+  const n = points.length;
+
+  const px = (i)=> n===1 ? W/2 : padL + (i/(n-1))*(W-padL-padR);
+  const py = (y)=> padT + (1-(y-minY)/rangeY)*(H-padT-padB);
+
+  let path = points.map((p,i)=> `${i===0?"M":"L"} ${px(i).toFixed(1)} ${py(p.y).toFixed(1)}`).join(" ");
+
+  // y-axis labels (3 levels)
+  const yTop = maxY, yMid = (maxY+minY)/2, yBot = minY;
+  const dispY = (y)=> state.unit==="imperial" ? kgToLb(y).toFixed(1) : y.toFixed(1);
+
+  // x-axis labels (dates), show ~4-5 evenly spaced
+  const labelCount = Math.min(n, 5);
+  let xLabels = "";
+  for(let li=0; li<labelCount; li++){
+    const idx = labelCount===1 ? 0 : Math.round(li*(n-1)/(labelCount-1));
+    const d = points[idx].x;
+    const lbl = weightPeriod==="month" ? `${pad(d.getMonth()+1)}/${d.getFullYear().toString().slice(2)}` : `${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
+    xLabels += `<text x="${px(idx).toFixed(1)}" y="${H-8}" fill="#8d97b8" font-size="8" text-anchor="middle">${lbl}</text>`;
+  }
+
+  let dots = points.map((p,i)=> `<circle cx="${px(i).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="4.5" fill="#5b8def" stroke="#0f172a" stroke-width="1.5" class="wpt" data-val="${dispY(p.y)}" data-date="${p.x.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit'})}"/>`).join("");
+
+  svg.innerHTML = `
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="#2a3557"/>
+    <line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="#2a3557"/>
+    <text x="2" y="${padT+4}" fill="#8d97b8" font-size="9">${dispY(yTop)}</text>
+    <text x="2" y="${py(yMid)+3}" fill="#8d97b8" font-size="9">${dispY(yMid)}</text>
+    <text x="2" y="${H-padB+3}" fill="#8d97b8" font-size="9">${dispY(yBot)}</text>
+    ${xLabels}
+    <path d="${path}" fill="none" stroke="#5b8def" stroke-width="2"/>
+    ${dots}
+  `;
+
+  svg.querySelectorAll(".wpt").forEach(dot=>{
+    const show = ()=>{
+      wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
+      const dotBox = dot.getBoundingClientRect();
+      const wrapBox = wrap.getBoundingClientRect();
+      const tip = document.createElement("div");
+      tip.className = "tooltip-pt";
+      tip.textContent = `${dot.dataset.val} ${weightUnitLabel()} · ${dot.dataset.date}`;
+      tip.style.left = (dotBox.left - wrapBox.left + dotBox.width/2) + "px";
+      tip.style.top = (dotBox.top - wrapBox.top) + "px";
+      wrap.appendChild(tip);
+      clearTimeout(dot._t);
+      dot._t = setTimeout(()=>tip.remove(), 2500);
+    };
+    dot.addEventListener("touchstart", show, {passive:true});
+    dot.addEventListener("mouseenter", show);
+  });
+}
+
+/* ============ SETTINGS ============ */
+document.getElementById("unitSeg").addEventListener("click", (e)=>{
+  const b = e.target.closest("button"); if(!b) return;
+  document.querySelectorAll("#unitSeg button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active");
+  state.unit = b.dataset.u;
+  lsSet(LS.unit, state.unit);
+  renderHeightField();
+  renderWeightCard(); renderWeightHistory(); renderWeightChart();
+});
+
+function renderHeightField(){
+  const wrap = document.getElementById("heightFieldWrap");
+  if(state.unit==="imperial"){
+    const {ft,inch} = state.height ? cmToFtIn(state.height) : {ft:"",inch:""};
+    wrap.innerHTML = `
+      <label>Altezza</label>
+      <div class="row">
+        <input type="number" id="heightFt" placeholder="ft" value="${ft}" style="flex:1">
+        <input type="number" id="heightIn" placeholder="in" value="${inch}" style="flex:1">
+      </div>`;
+  } else {
+    wrap.innerHTML = `
+      <label>Altezza (cm)</label>
+      <input type="number" id="heightInput" placeholder="es. 178" value="${state.height||""}">`;
+  }
+}
+document.getElementById("saveHeightBtn").addEventListener("click", ()=>{
+  let cm;
+  if(state.unit==="imperial"){
+    const ft = parseFloat(document.getElementById("heightFt").value)||0;
+    const inch = parseFloat(document.getElementById("heightIn").value)||0;
+    cm = ftInToCm(ft,inch);
+  } else {
+    cm = parseFloat(document.getElementById("heightInput").value);
+  }
+  if(!cm){ showToast("Inserisci un'altezza valida"); return; }
+  state.height = cm;
+  lsSet(LS.height, cm);
+  renderWeightCard();
+  showToast("Altezza salvata");
+  if(_currentUser) saveHeightToSupabase(cm);
+});
+
+document.getElementById("importBtn").addEventListener("click", ()=>{
+  document.getElementById("importFileInput").click();
+});
+document.getElementById("importFileInput").addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (ev)=>{
+    const text = ev.target.result;
+    const lines = text.split(/\r?\n/).filter(l=>l.trim());
+    let addedFasts = 0, addedWeights = 0, skipped = 0;
+    for(let i=1; i<lines.length; i++){ // skip header
+      const parts = lines[i].split(",");
+      if(parts.length<2) continue;
+      const tipo = parts[0].trim();
+      if(tipo === "digiuno"){
+        const start_at = parts[1];
+        const end_at = parts[2];
+        if(!start_at || !end_at) { skipped++; continue; }
+        if(new Date(start_at) > new Date()) { skipped++; continue; }
+        const exists = state.fasts.some(f=>f.start_at===start_at && f.end_at===end_at);
+        if(exists){ skipped++; continue; }
+        const f = {id: uid(), start_at, end_at};
+        state.fasts.push(f);
+        addedFasts++;
+        if(sb) await syncFastToSupabase(f);
+      } else if(tipo.startsWith("peso_kg_")){
+        const kg = parseFloat(tipo.replace("peso_kg_",""));
+        const at = parts[1];
+        if(!kg || !at) { skipped++; continue; }
+        if(new Date(at) > new Date()) { skipped++; continue; }
+        const exists = state.weights.some(w=>w.at===at && Math.abs(w.weight_kg-kg)<0.001);
+        if(exists){ skipped++; continue; }
+        const w = {id: uid(), weight_kg: kg, at};
+        state.weights.push(w);
+        addedWeights++;
+        if(sb) await syncWeightToSupabase(w);
+      }
+    }
+    state.fasts.sort((a,b)=>new Date(b.start_at)-new Date(a.start_at));
+    state.weights.sort((a,b)=>new Date(b.at)-new Date(a.at));
+    lsSet(LS.fasts, state.fasts);
+    lsSet(LS.weights, state.weights);
+    renderFastHistory(); renderFastChart();
+    renderWeightCard(); renderWeightHistory(); renderWeightChart();
+    showToast(`Importati: ${addedFasts} digiuni, ${addedWeights} pesi (${skipped} saltati)`);
+    document.getElementById("importFileInput").value = "";
+  };
+  reader.readAsText(file);
+});
+
+document.getElementById("exportBtn").addEventListener("click", ()=>{
+  let csv = "tipo,inizio_o_data,fine\n";
+  state.fasts.forEach(f=> csv += `digiuno,${f.start_at},${f.end_at}\n`);
+  state.weights.forEach(w=> csv += `peso_kg_${w.weight_kg},${w.at},\n`);
+  const blob = new Blob([csv], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "pesodigiuno_export.csv"; a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ============ SUPABASE SYNC (best-effort, offline-first) ============ */
+async function syncFastToSupabase(fast, isUpdate){
+  if(!_currentUser) return;
+  try{
+    if(isUpdate){
+      await sb.from("fasting_logs").update({start_at: fast.start_at, end_at: fast.end_at}).eq("id", fast.id);
+    } else {
+      await sb.from("fasting_logs").upsert({id: fast.id, user_id: _currentUser.id, start_at: fast.start_at, end_at: fast.end_at}, {onConflict:"id"});
+    }
+    setConnStatus(true);
+  }catch(e){ setConnStatus(false); }
+}
+async function syncWeightToSupabase(w, isUpdate){
+  if(!_currentUser) return;
+  try{
+    if(isUpdate){
+      await sb.from("weight_logs").update({weight_kg: w.weight_kg, at: w.at}).eq("id", w.id);
+    } else {
+      await sb.from("weight_logs").upsert({id: w.id, user_id: _currentUser.id, weight_kg: w.weight_kg, at: w.at}, {onConflict:"id"});
+    }
+    setConnStatus(true);
+  }catch(e){ setConnStatus(false); }
+}
+async function loadHeightFromSupabase(){
+  if(!_currentUser) return;
+  try{
+    const {data,error} = await sb.from("profiles").select("height_cm").eq("id", _currentUser.id).maybeSingle();
+    if(!error && data && data.height_cm){
+      state.height = data.height_cm;
+      lsSet(LS.height, state.height);
+      renderHeightField();
+      renderWeightCard();
+    }
+  }catch(e){}
+}
+async function saveHeightToSupabase(cm){
+  if(!_currentUser) return;
+  try{
+    await sb.from("profiles").upsert({id: _currentUser.id, height_cm: cm}, {onConflict:"id"});
+  }catch(e){}
+}
+function setConnStatus(ok){
+  const dot = document.getElementById("syncDot2");
+  if(dot) dot.classList.toggle("error", !ok);
+}
+
+async function pullFromSupabase(){
+  if(!_currentUser) { setConnStatus(false); return; }
+  try{
+    const {data: fastsData, error: e1} = await sb.from("fasting_logs").select("*").eq("user_id", _currentUser.id).order("start_at", {ascending:false});
+    const {data: weightsData, error: e2} = await sb.from("weight_logs").select("*").eq("user_id", _currentUser.id).order("at", {ascending:false});
+    if(!e1 && fastsData){
+      state.fasts = fastsData.map(f=>({id:f.id, start_at:f.start_at, end_at:f.end_at}));
+      lsSet(LS.fasts, state.fasts);
+    }
+    if(!e2 && weightsData){
+      state.weights = weightsData.map(w=>({id:w.id, weight_kg:w.weight_kg, at:w.at}));
+      lsSet(LS.weights, state.weights);
+    }
+    setConnStatus(true);
+    renderFastHistory(); renderFastChart(); renderWeightCard(); renderWeightHistory(); renderWeightChart();
+  }catch(e){ setConnStatus(false); }
+}
+
+/* ============ AUTH (stesso pattern di CaliMat) ============ */
+function lsShowTab(tab){
+  document.getElementById('formLogin').style.display  = tab==='login'  ? 'block':'none';
+  document.getElementById('formSignup').style.display = tab==='signup' ? 'block':'none';
+  document.getElementById('tabLogin').classList.toggle('on',  tab==='login');
+  document.getElementById('tabSignup').classList.toggle('on', tab==='signup');
+  document.getElementById('lsErr').style.display='none';
+  document.getElementById('lsOk').style.display='none';
+}
+function lsShowErr(msg){const e=document.getElementById('lsErr');e.textContent=msg;e.style.display='block';document.getElementById('lsOk').style.display='none';}
+function lsShowOk(msg){const e=document.getElementById('lsOk');e.textContent=msg;e.style.display='block';document.getElementById('lsErr').style.display='none';}
+function lsSetLoading(btn,sp,lbl,on){
+  document.getElementById(btn).disabled=on;
+  document.getElementById(sp).style.display=on?'block':'none';
+  document.getElementById(lbl).style.display=on?'none':'inline';
+}
+async function doLogin(){
+  const email=document.getElementById('liEmail').value.trim();
+  const pw=document.getElementById('liPw').value;
+  if(!email||!pw) return lsShowErr('Inserisci email e password');
+  lsSetLoading('btnLogin','spLogin','lblLogin',true);
+  const {data,error}=await sb.auth.signInWithPassword({email,password:pw});
+  lsSetLoading('btnLogin','spLogin','lblLogin',false);
+  if(error) return lsShowErr(error.message==='Invalid login credentials'?'Email o password errati':error.message);
+  enterApp(data.user);
+}
+async function doSignup(){
+  const email=document.getElementById('suEmail').value.trim();
+  const pw=document.getElementById('suPw').value;
+  const pw2=document.getElementById('suPw2').value;
+  if(!email||!pw) return lsShowErr('Inserisci email e password');
+  if(pw.length<6) return lsShowErr('La password deve essere di almeno 6 caratteri');
+  if(pw!==pw2) return lsShowErr('Le password non coincidono');
+  lsSetLoading('btnSignup','spSignup','lblSignup',true);
+  const {data,error}=await sb.auth.signUp({email,password:pw});
+  lsSetLoading('btnSignup','spSignup','lblSignup',false);
+  if(error) return lsShowErr(error.message);
+  if(data.user && !data.session){
+    lsShowOk("Registrazione ok! Controlla la tua email per confermare l'account.");
+  } else if(data.session){
+    enterApp(data.user);
+  }
+}
+async function doLogout(){
+  await sb.auth.signOut();
+  _currentUser=null;
+  clearInterval(fastTimerInterval);
+  document.getElementById('appRoot').style.display='none';
+  document.getElementById('loginScreen').classList.add('active');
+}
+function enterApp(user){
+  _currentUser=user;
+  document.getElementById('loginScreen').classList.remove('active');
+  document.getElementById('appRoot').style.display='block';
+  const email=user.email||'';
+  document.getElementById('userEmail').textContent=email;
+  document.getElementById('settingsEmail').textContent=email;
+  init();
+}
+
+/* ============ INIT ============ */
+function init(){
+  document.querySelector(`#unitSeg button[data-u="${state.unit}"]`).classList.add("active");
+  document.querySelectorAll("#unitSeg button").forEach(b=>{ if(b.dataset.u!==state.unit) b.classList.remove("active"); });
+  renderHeightField();
+  renderFastHero();
+  renderFastHistory();
+  renderFastChart();
+  renderWeightCard();
+  renderWeightHistory();
+  renderWeightChart();
+  setConnStatus(true);
+  pullFromSupabase();
+  loadHeightFromSupabase();
+
+  if(fastTimerInterval) clearInterval(fastTimerInterval);
+  fastTimerInterval = setInterval(updateFastTimer, 1000);
+}
+
+/* ============ INIT AUTH ============ */
+(async()=>{
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(session){ enterApp(session.user); }
+    else { document.getElementById('loginScreen').classList.add('active'); }
+  }catch(e){
+    console.error('initAuth error (probabile offline)', e);
+    document.getElementById('loginScreen').classList.add('active');
+  }
+})();
+</script>
+
+</body>
+</html>
