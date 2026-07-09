@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "dev.pages.pesodigiuno.twa",
+        "sha256_cert_fingerprints": ["35:0E:5A:B2:8A:05:09:E8:8C:2B:9A:B4:C9:20:F6:15:29:53:65:15:2B:6A:43:BD:46:B0:E9:FF:B7:4C:B4:F9"]
+      }
+    }]
