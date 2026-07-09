@@ -1050,13 +1050,13 @@ function renderWeightChart(){
   const py = (y)=> padT + (1-(y-minY)/rangeY)*(H-padT-padB);
   const dispY = (y)=> state.unit==="imperial" ? kgToLb(y) : y;
 
-  // path con interruzioni dove mancano i dati
+  // path: collega sempre tutti i punti con dati, anche "saltando" slot vuoti in mezzo
   let path = "";
-  let drawing = false;
+  let started = false;
   points.forEach((p,i)=>{
-    if(p.y===null){ drawing=false; return; }
-    path += `${drawing?"L":"M"} ${px(i).toFixed(1)} ${py(p.y).toFixed(1)} `;
-    drawing = true;
+    if(p.y===null) return;
+    path += `${started?"L":"M"} ${px(i).toFixed(1)} ${py(p.y).toFixed(1)} `;
+    started = true;
   });
 
   // etichette asse X: mostra ogni slot se pochi, altrimenti dirada
