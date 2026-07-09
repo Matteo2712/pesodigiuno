@@ -207,8 +207,8 @@
     <div class="card">
       <h2>Storico digiuni</h2>
       <div class="period-select" id="fastPeriodSel">
-        <button data-p="day">Giorni</button>
-        <button data-p="week" class="active">Settimane</button>
+        <button data-p="day" class="active">Giorni</button>
+        <button data-p="week">Settimane</button>
         <button data-p="month">Mesi</button>
       </div>
       <div class="chart-wrap"><svg class="chart" id="fastChart" viewBox="0 0 320 180"></svg></div>
@@ -389,6 +389,11 @@ function fmtDurationShort(ms){
   if(h>0) return `${h}h ${m}m`;
   return `${m}m`;
 }
+function fmtHoursMinutes(hoursFloat){
+  const totalMin = Math.round(hoursFloat*60);
+  const h = Math.floor(totalMin/60), m = totalMin%60;
+  return `${h}h${pad(m)}'`;
+}
 function toISO(dateStr, timeStr){ return new Date(`${dateStr}T${timeStr}:00`).toISOString(); }
 function nowDateStr(){ const d=new Date(); return d.toISOString().slice(0,10); }
 function todayLocalStr(){
@@ -540,7 +545,8 @@ function renderFastHistory(){
         <div class="meta">${fmtDateTime(f.start_at)} → ${fmtDateTime(f.end_at)}</div>
       </div>
       <div class="actions">
-        <button class="icon-btn" onclick="editFastStart('${f.id}')"><i class="ti ti-edit"></i></button>
+        <button class="icon-btn" title="Modifica inizio" onclick="editFastStart('${f.id}')"><i class="ti ti-player-play"></i></button>
+        <button class="icon-btn" title="Modifica fine" onclick="editFastEnd('${f.id}')"><i class="ti ti-player-stop"></i></button>
         <button class="icon-btn" onclick="deleteFast('${f.id}')"><i class="ti ti-trash"></i></button>
       </div>
     </div>`;
@@ -563,12 +569,6 @@ window.editFastStart = function(id){
     showToast("Digiuno aggiornato");
     if(sb) syncFastToSupabase(f, true);
   }, f.start_at);
-  // after choosing start, offer to edit end too
-  const origCb = timeModalCallback;
-  timeModalCallback = (iso)=>{
-    origCb(iso);
-    setTimeout(()=> editFastEnd(id), 250);
-  };
 };
 window.editFastEnd = function(id){
   const f = state.fasts.find(x=>x.id===id);
@@ -583,7 +583,7 @@ window.editFastEnd = function(id){
   }, f.end_at);
 };
 
-let fastPeriod = "week";
+let fastPeriod = "day";
 document.getElementById("fastPeriodSel").addEventListener("click", (e)=>{
   const b = e.target.closest("button"); if(!b) return;
   document.querySelectorAll("#fastPeriodSel button").forEach(x=>x.classList.remove("active"));
@@ -607,7 +607,7 @@ function renderFastChart(){
     bars_data = sorted.slice(-14).map(f=>{
       const h = (new Date(f.end_at)-new Date(f.start_at))/3600000;
       const d = new Date(f.start_at);
-      return {label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, hours:h, tip:`${h.toFixed(1)}h · ${fmtDateTime(f.start_at)}`};
+      return {label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, hours:h, tip:fmtHoursMinutes(h)};
     });
   } else {
     const groups = {};
@@ -636,7 +636,7 @@ function renderFastChart(){
         const [y,m] = k.split("-");
         label = `${m}/${y.slice(2)}`;
       }
-      return {label, hours:avg, tip:`media ${avg.toFixed(1)}h (${arr.length} digiuni)`};
+      return {label, hours:avg, tip:`media ${fmtHoursMinutes(avg)}`};
     });
   }
 
