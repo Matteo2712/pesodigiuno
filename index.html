@@ -183,7 +183,7 @@
 
 <header class="top">
   <h1>PesoDigiuno</h1>
-  <div class="user-pill" id="userPill" onclick="document.querySelector('.tab[data-view=settings]').click()">
+  <div class="user-pill" id="userPill" onclick="openSettings()">
     <span class="sync-dot2" id="syncDot2"></span>
     <span id="userEmail" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
   </div>
@@ -191,9 +191,8 @@
 
 <main>
   <div class="tabs">
-    <div class="tab active" data-view="fast"><i class="ti ti-hourglass"></i> Digiuno</div>
-    <div class="tab" data-view="weight"><i class="ti ti-scale"></i> Peso</div>
-    <div class="tab" data-view="settings"><i class="ti ti-settings"></i> Impostazioni</div>
+    <div class="tab" data-view="weight">Peso</div>
+    <div class="tab active" data-view="fast">Digiuno</div>
   </div>
 
   <!-- DIGIUNO -->
@@ -208,9 +207,9 @@
     <div class="card">
       <h2>Storico digiuni</h2>
       <div class="period-select" id="fastPeriodSel">
-        <button data-p="day">Giorno</button>
-        <button data-p="week" class="active">Settimana</button>
-        <button data-p="month">Mese</button>
+        <button data-p="day">Giorni</button>
+        <button data-p="week" class="active">Settimane</button>
+        <button data-p="month">Mesi</button>
       </div>
       <div class="chart-wrap"><svg class="chart" id="fastChart" viewBox="0 0 320 180"></svg></div>
     </div>
@@ -237,9 +236,9 @@
     <div class="card">
       <h2>Grafico</h2>
       <div class="period-select" id="weightPeriodSel">
-        <button data-p="day" class="active">Giorno</button>
-        <button data-p="week">Settimana</button>
-        <button data-p="month">Mese</button>
+        <button data-p="day" class="active">Giorni</button>
+        <button data-p="week">Settimane</button>
+        <button data-p="month">Mesi</button>
       </div>
       <div class="chart-wrap" id="weightChartWrap"><svg class="chart" id="weightChart" viewBox="0 0 320 180"></svg></div>
     </div>
@@ -256,7 +255,7 @@
     <div class="card">
       <h2>Unità di misura</h2>
       <div class="settings-row">
-        <div class="lbl">Sistema<small>Cambia unità peso/altezza</small></div>
+        <div class="lbl">Sistema</div>
         <div class="seg" id="unitSeg">
           <button data-u="metric" class="active">kg / cm</button>
           <button data-u="imperial">lb / ft-in</button>
@@ -422,6 +421,11 @@ document.querySelectorAll(".tab").forEach(tab=>{
     if(tab.dataset.view==="weight") renderWeightChart();
   });
 });
+function openSettings(){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  document.getElementById("view-settings").classList.add("active");
+}
 
 /* ============ TIME MODAL (generic confirm) ============ */
 function openTimeModal(title, cb, prefillISO){
@@ -591,37 +595,67 @@ document.getElementById("fastPeriodSel").addEventListener("click", (e)=>{
 function renderFastChart(){
   const svg = document.getElementById("fastChart");
   const wrap = document.getElementById("fastPeriodSel").closest(".card").querySelector(".chart-wrap");
-  const now = new Date();
-  let cutoff;
-  if(fastPeriod==="day") cutoff = new Date(now-1*86400000);
-  else if(fastPeriod==="week") cutoff = new Date(now-7*86400000);
-  else cutoff = new Date(now-30*86400000);
-
-  const data = state.fasts.filter(f=>new Date(f.start_at)>=cutoff)
-    .sort((a,b)=>new Date(a.start_at)-new Date(b.start_at));
-
   wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
 
-  if(data.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
+  if(state.fasts.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
 
-  const durations = data.map(f=> (new Date(f.end_at)-new Date(f.start_at))/3600000 );
-  const maxH = Math.max(...durations, 16);
+  const sorted = [...state.fasts].sort((a,b)=>new Date(a.start_at)-new Date(b.start_at));
+  let bars_data = []; // [{label, hours, tooltip}]
+
+  if(fastPeriod==="day"){
+    // ultimi digiuni individuali (max 14)
+    bars_data = sorted.slice(-14).map(f=>{
+      const h = (new Date(f.end_at)-new Date(f.start_at))/3600000;
+      const d = new Date(f.start_at);
+      return {label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, hours:h, tip:`${h.toFixed(1)}h · ${fmtDateTime(f.start_at)}`};
+    });
+  } else {
+    const groups = {};
+    sorted.forEach(f=>{
+      const d = new Date(f.start_at);
+      const h = (new Date(f.end_at)-new Date(f.start_at))/3600000;
+      let key;
+      if(fastPeriod==="week"){
+        const monday = new Date(d); monday.setDate(d.getDate()-((d.getDay()+6)%7));
+        key = monday.toISOString().slice(0,10);
+      } else {
+        key = d.toISOString().slice(0,7);
+      }
+      if(!groups[key]) groups[key]=[];
+      groups[key].push(h);
+    });
+    const keys = Object.keys(groups).sort().slice(-12);
+    bars_data = keys.map(k=>{
+      const arr = groups[k];
+      const avg = arr.reduce((a,b)=>a+b,0)/arr.length;
+      let label;
+      if(fastPeriod==="week"){
+        const d = new Date(k);
+        label = `${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
+      } else {
+        const [y,m] = k.split("-");
+        label = `${m}/${y.slice(2)}`;
+      }
+      return {label, hours:avg, tip:`media ${avg.toFixed(1)}h (${arr.length} digiuni)`};
+    });
+  }
+
+  if(bars_data.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
+
+  const maxH = Math.max(...bars_data.map(b=>b.hours), 16);
   const W=320,H=180,padL=30,padR=10,padT=20,padB=28, barGap=6;
-  const n = data.length;
+  const n = bars_data.length;
   const plotW = W-padL-padR;
   const barW = Math.max(6, plotW/n - barGap);
 
   let bars = "";
-  data.forEach((f,i)=>{
-    const h = durations[i];
-    const barH = (h/(maxH*1.15))*(H-padT-padB);
+  bars_data.forEach((b,i)=>{
+    const barH = (b.hours/(maxH*1.15))*(H-padT-padB);
     const x = padL + i*(plotW/n) + (plotW/n - barW)/2;
     const y = H-padB-barH;
-    const d = new Date(f.start_at);
-    const dayLbl = `${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
-    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3" fill="#5b8def" data-h="${h.toFixed(1)}" data-lbl="${fmtDateTime(f.start_at)}" class="fastbar"/>`;
-    if(n<=10 || i%Math.ceil(n/8)===0){
-      bars += `<text x="${(x+barW/2).toFixed(1)}" y="${H-10}" fill="#8d97b8" font-size="8" text-anchor="middle">${dayLbl}</text>`;
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3" fill="#5b8def" data-tip="${b.tip}" class="fastbar"/>`;
+    if(n<=12 || i%Math.ceil(n/8)===0){
+      bars += `<text x="${(x+barW/2).toFixed(1)}" y="${H-10}" fill="#8d97b8" font-size="8" text-anchor="middle">${b.label}</text>`;
     }
   });
   const gridY = H-padB;
@@ -631,13 +665,13 @@ function renderFastChart(){
   svg.innerHTML = bars;
 
   svg.querySelectorAll(".fastbar").forEach(rect=>{
-    const show = (ev)=>{
+    const show = ()=>{
       wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
       const rectBox = rect.getBoundingClientRect();
       const wrapBox = wrap.getBoundingClientRect();
       const tip = document.createElement("div");
       tip.className = "tooltip-pt";
-      tip.textContent = `${rect.dataset.h}h · ${rect.dataset.lbl}`;
+      tip.textContent = rect.dataset.tip;
       tip.style.left = (rectBox.left - wrapBox.left + rectBox.width/2) + "px";
       tip.style.top = (rectBox.top - wrapBox.top) + "px";
       wrap.appendChild(tip);
