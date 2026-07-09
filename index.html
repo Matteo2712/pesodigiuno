@@ -118,7 +118,9 @@
   .tooltip-pt{position:absolute; background:var(--card2); border:1px solid var(--border); color:var(--text);
     padding:6px 10px; border-radius:8px; font-size:12px; pointer-events:none; z-index:5; white-space:nowrap;
     transform:translate(-50%,-115%); box-shadow:0 4px 12px rgba(0,0,0,.3);}
-  .chart-wrap{position:relative;}
+  .chart-wrap{position:relative; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .chart-wrap::-webkit-scrollbar{height:4px;}
+  .chart-wrap::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
   .load-more-btn{width:100%; padding:10px; margin-top:8px; border-radius:10px; border:1px solid var(--border);
     background:var(--card2); color:var(--muted); font-size:13px; font-weight:600; cursor:pointer;}
   /* ── LOGIN SCREEN (stesso stile di CaliMat) ── */
@@ -217,6 +219,7 @@
     <div class="card">
       <h2>Cronologia</h2>
       <div class="hist-list" id="fastHistList"><div class="empty">Nessun digiuno registrato</div></div>
+      <button class="load-more-btn" id="fastLoadMoreBtn" style="display:none;">Altro</button>
       <button class="btn btn-secondary" id="addPastFastBtn" style="margin-top:14px;"><i class="ti ti-calendar-plus"></i> Aggiungi digiuno passato</button>
     </div>
   </section>
@@ -260,6 +263,16 @@
         <div class="seg" id="unitSeg">
           <button data-u="metric" class="active">kg / cm</button>
           <button data-u="imperial">lb / ft-in</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Profilo</h2>
+      <div class="settings-row">
+        <div class="lbl">Sesso<small>Usato per il calcolo del BMI</small></div>
+        <div class="seg" id="genderSeg">
+          <button data-g="m" class="active">Uomo</button>
+          <button data-g="f">Donna</button>
         </div>
       </div>
     </div>
@@ -389,6 +402,7 @@ const LS = {
   weights: "pd_weights", // {id, weight_kg, at}
   height: "pd_height_cm",
   unit: "pd_unit", // metric | imperial
+  gender: "pd_gender", // m | f
   activeFast: "pd_active_fast" // {start_at} or null
 };
 
@@ -400,8 +414,8 @@ let state = {
   weights: lsGet(LS.weights, []),
   height: lsGet(LS.height, null),
   unit: lsGet(LS.unit, "metric"),
-  activeFast: lsGet(LS.activeFast, null),
-  lastFastEnd: lsGet("pd_last_fast_end", null)
+  gender: lsGet(LS.gender, "m"),
+  activeFast: lsGet(LS.activeFast, null)
 };
 
 let timeModalCallback = null;
@@ -498,6 +512,11 @@ document.getElementById("timeModalConfirm").addEventListener("click", ()=>{
 });
 
 /* ============ FASTING LOGIC ============ */
+function getLastFastEnd(){
+  if(state.fasts.length===0) return null;
+  return state.fasts.reduce((latest,f)=> !latest || new Date(f.end_at)>new Date(latest) ? f.end_at : latest, null);
+}
+
 function renderFastHero(){
   const label = document.getElementById("fastLabel");
   const timer = document.getElementById("fastTimer");
@@ -515,11 +534,8 @@ function renderFastHero(){
   } else {
     label.textContent = "Non stai digiunando";
     timer.className = "timer eating";
-    if(state.lastFastEnd){
-      since.textContent = "Ultimo digiuno terminato: " + fmtDateTime(state.lastFastEnd);
-    } else {
-      since.textContent = "";
-    }
+    const lastEnd = getLastFastEnd();
+    since.textContent = lastEnd ? "Ultimo digiuno terminato: " + fmtDateTime(lastEnd) : "";
     btn.className = "btn btn-start";
     btn.innerHTML = '<i class="ti ti-player-play"></i> Inizia digiuno';
     updateFastTimer();
@@ -527,11 +543,12 @@ function renderFastHero(){
 }
 window.editActiveFastStart = function(){
   if(!state.activeFast) return;
-  openTimeModal("Modifica inizio digiuno in corso", (iso)=>{
+  openTimeModal("Modifica inizio digiuno in corso", async (iso)=>{
     state.activeFast.start_at = iso;
     lsSet(LS.activeFast, state.activeFast);
     renderFastHero();
     showToast("Inizio digiuno aggiornato");
+    if(sb) await syncActiveFastStart(state.activeFast, true);
   }, state.activeFast.start_at);
 };
 
@@ -540,11 +557,13 @@ function updateFastTimer(){
   if(state.activeFast){
     const start = new Date(state.activeFast.start_at).getTime();
     timer.textContent = fmtDuration(Date.now()-start);
-  } else if(state.lastFastEnd){
-    const end = new Date(state.lastFastEnd).getTime();
-    timer.textContent = fmtDuration(Date.now()-end);
   } else {
-    timer.textContent = "00:00:00";
+    const lastEnd = getLastFastEnd();
+    if(lastEnd){
+      timer.textContent = fmtDuration(Date.now()-new Date(lastEnd).getTime());
+    } else {
+      timer.textContent = "00:00:00";
+    }
   }
 }
 
@@ -554,32 +573,38 @@ document.getElementById("fastToggleBtn").addEventListener("click", ()=>{
     openTimeModal("Fine digiuno", async (iso)=>{
       const startISO = state.activeFast.start_at;
       if(new Date(iso) <= new Date(startISO)){ showToast("L'orario di fine deve essere dopo l'inizio"); return; }
-      const fast = {id: uid(), start_at: startISO, end_at: iso};
+      const fast = {id: state.activeFast.id, start_at: startISO, end_at: iso};
       state.fasts.unshift(fast);
       state.activeFast = null;
-      state.lastFastEnd = iso;
       lsSet(LS.fasts, state.fasts);
       lsSet(LS.activeFast, null);
-      lsSet("pd_last_fast_end", iso);
       renderFastHero(); renderFastHistory(); renderFastChart();
       showToast("Digiuno salvato");
-      if(sb) await syncFastToSupabase(fast);
+      if(sb) await syncFastToSupabase(fast, true); // update: la riga esiste già (creata all'avvio con end_at null)
     });
   } else {
     // start
     openTimeModal("Inizio digiuno", async (iso)=>{
-      state.activeFast = {start_at: iso};
+      state.activeFast = {id: uid(), start_at: iso};
       lsSet(LS.activeFast, state.activeFast);
       renderFastHero();
       showToast("Digiuno iniziato");
+      if(sb) await syncActiveFastStart(state.activeFast);
     });
   }
 });
 
+let fastHistVisible = 3;
 function renderFastHistory(){
   const list = document.getElementById("fastHistList");
-  if(state.fasts.length===0){ list.innerHTML = '<div class="empty">Nessun digiuno registrato</div>'; return; }
-  list.innerHTML = state.fasts.slice(0,50).map(f=>{
+  const moreBtn = document.getElementById("fastLoadMoreBtn");
+  if(state.fasts.length===0){
+    list.innerHTML = '<div class="empty">Nessun digiuno registrato</div>';
+    moreBtn.style.display = "none";
+    return;
+  }
+  const shown = state.fasts.slice(0, fastHistVisible);
+  list.innerHTML = shown.map(f=>{
     const dur = new Date(f.end_at) - new Date(f.start_at);
     return `<div class="hist-item">
       <div>
@@ -592,7 +617,12 @@ function renderFastHistory(){
       </div>
     </div>`;
   }).join("");
+  moreBtn.style.display = fastHistVisible < state.fasts.length ? "block" : "none";
 }
+document.getElementById("fastLoadMoreBtn").addEventListener("click", ()=>{
+  fastHistVisible += 5;
+  renderFastHistory();
+});
 window.deleteFast = function(id){
   state.fasts = state.fasts.filter(f=>f.id!==id);
   lsSet(LS.fasts, state.fasts);
@@ -673,95 +703,126 @@ document.getElementById("fastPeriodSel").addEventListener("click", (e)=>{
   renderFastChart();
 });
 
+function buildDaySlots(count){
+  const slots = [];
+  const today = new Date(); today.setHours(0,0,0,0);
+  for(let i=count-1;i>=0;i--){
+    const d = new Date(today); d.setDate(today.getDate()-i);
+    slots.push({key: d.toISOString().slice(0,10), label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, date:d});
+  }
+  return slots;
+}
+function buildWeekSlots(count){
+  const slots = [];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const monday = new Date(today); monday.setDate(today.getDate()-((today.getDay()+6)%7));
+  for(let i=count-1;i>=0;i--){
+    const d = new Date(monday); d.setDate(monday.getDate()-7*i);
+    slots.push({key: d.toISOString().slice(0,10), label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, date:d});
+  }
+  return slots;
+}
+function buildMonthSlots(count){
+  const slots = [];
+  const today = new Date();
+  const names = ["Gen","Feb","Mar","Apr","Mag","Giu","Lug","Ago","Set","Ott","Nov","Dic"];
+  for(let i=count-1;i>=0;i--){
+    const d = new Date(today.getFullYear(), today.getMonth()-i, 1);
+    slots.push({key: `${d.getFullYear()}-${pad(d.getMonth()+1)}`, label:`${names[d.getMonth()]}`, date:d});
+  }
+  return slots;
+}
+
 function renderFastChart(){
   const svg = document.getElementById("fastChart");
   const wrap = document.getElementById("fastPeriodSel").closest(".card").querySelector(".chart-wrap");
   wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
 
-  if(state.fasts.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
+  let slots;
+  if(fastPeriod==="day") slots = buildDaySlots(14);
+  else if(fastPeriod==="week") slots = buildWeekSlots(12);
+  else slots = buildMonthSlots(12);
 
-  const sorted = [...state.fasts].sort((a,b)=>new Date(a.start_at)-new Date(b.start_at));
-  let bars_data = []; // [{label, hours, tooltip}]
+  // raggruppa i digiuni per slot key
+  const byKey = {};
+  state.fasts.forEach(f=>{
+    const d = new Date(f.start_at);
+    const h = (new Date(f.end_at)-new Date(f.start_at))/3600000;
+    let key;
+    if(fastPeriod==="day") key = d.toISOString().slice(0,10);
+    else if(fastPeriod==="week"){ const monday=new Date(d); monday.setHours(0,0,0,0); monday.setDate(d.getDate()-((d.getDay()+6)%7)); key = monday.toISOString().slice(0,10); }
+    else key = `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+    if(!byKey[key]) byKey[key]=[];
+    byKey[key].push(h);
+  });
 
-  if(fastPeriod==="day"){
-    // ultimi digiuni individuali (max 14)
-    bars_data = sorted.slice(-14).map(f=>{
-      const h = (new Date(f.end_at)-new Date(f.start_at))/3600000;
-      const d = new Date(f.start_at);
-      return {label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, hours:h, tip:fmtHoursMinutes(h)};
-    });
-  } else {
-    const groups = {};
-    sorted.forEach(f=>{
-      const d = new Date(f.start_at);
-      const h = (new Date(f.end_at)-new Date(f.start_at))/3600000;
-      let key;
-      if(fastPeriod==="week"){
-        const monday = new Date(d); monday.setDate(d.getDate()-((d.getDay()+6)%7));
-        key = monday.toISOString().slice(0,10);
-      } else {
-        key = d.toISOString().slice(0,7);
-      }
-      if(!groups[key]) groups[key]=[];
-      groups[key].push(h);
-    });
-    const keys = Object.keys(groups).sort().slice(-12);
-    bars_data = keys.map(k=>{
-      const arr = groups[k];
-      const avg = arr.reduce((a,b)=>a+b,0)/arr.length;
-      let label;
-      if(fastPeriod==="week"){
-        const d = new Date(k);
-        label = `${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
-      } else {
-        const [y,m] = k.split("-");
-        label = `${m}/${y.slice(2)}`;
-      }
-      return {label, hours:avg, tip:`media ${fmtHoursMinutes(avg)}`};
-    });
-  }
+  const bars_data = slots.map(s=>{
+    const arr = byKey[s.key];
+    if(!arr) return {label:s.label, hours:null, tip:null};
+    const avg = arr.reduce((a,b)=>a+b,0)/arr.length;
+    const tip = fastPeriod==="day" ? fmtHoursMinutes(avg) : `media ${fmtHoursMinutes(avg)}`;
+    return {label:s.label, hours:avg, tip};
+  });
 
-  if(bars_data.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
-
-  const maxH = Math.max(...bars_data.map(b=>b.hours), 16);
-  const W=320,H=180,padL=30,padR=10,padT=20,padB=28, barGap=6;
+  const values = bars_data.filter(b=>b.hours!==null).map(b=>b.hours);
+  const maxH = Math.max(...values, 24) * 1.15;
+  const slotW = 32, padL=32, padR=14, padT=20, padB=26, barGap=8;
   const n = bars_data.length;
-  const plotW = W-padL-padR;
-  const barW = Math.max(6, plotW/n - barGap);
+  const totalW = padL + padR + n*slotW;
+  const H = 180;
+  const barW = slotW - barGap;
 
-  let bars = "";
+  const yForH = (h)=> padT + (1 - h/maxH)*(H-padT-padB);
+
+  let content = "";
   bars_data.forEach((b,i)=>{
-    const barH = (b.hours/(maxH*1.15))*(H-padT-padB);
-    const x = padL + i*(plotW/n) + (plotW/n - barW)/2;
-    const y = H-padB-barH;
-    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3" fill="#5b8def" data-tip="${b.tip}" class="fastbar"/>`;
-    if(n<=12 || i%Math.ceil(n/8)===0){
-      bars += `<text x="${(x+barW/2).toFixed(1)}" y="${H-10}" fill="#8d97b8" font-size="8" text-anchor="middle">${b.label}</text>`;
+    const xCenter = padL + i*slotW + slotW/2;
+    if(b.hours!==null){
+      const barH = (H-padT-padB) - (yForH(b.hours)-padT);
+      const y = yForH(b.hours);
+      content += `<rect x="${(xCenter-barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="3" fill="#5b8def" data-tip="${b.tip}" class="fastbar"/>`;
+    }
+    content += `<text x="${xCenter.toFixed(1)}" y="${H-8}" fill="#8d97b8" font-size="8" text-anchor="middle">${b.label}</text>`;
+  });
+
+  const gridY = H-padB;
+  // linee di riferimento fisse 16h e 20h
+  [16,20].forEach(hLine=>{
+    if(hLine<=maxH){
+      const y = yForH(hLine);
+      content += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${totalW-padR}" y2="${y.toFixed(1)}" stroke="#f0a34e" stroke-width="1" stroke-dasharray="3,3"/>`;
+      content += `<text x="2" y="${(y+3).toFixed(1)}" fill="#f0a34e" font-size="8">${hLine}h</text>`;
     }
   });
-  const gridY = H-padB;
-  bars += `<line x1="${padL}" y1="${gridY}" x2="${W-padR}" y2="${gridY}" stroke="#2a3557"/>`;
-  bars += `<text x="4" y="${padT}" fill="#8d97b8" font-size="9">${maxH.toFixed(0)}h</text>`;
-  bars += `<text x="4" y="${gridY}" fill="#8d97b8" font-size="9">0h</text>`;
-  svg.innerHTML = bars;
+  content += `<line x1="${padL}" y1="${gridY}" x2="${totalW-padR}" y2="${gridY}" stroke="#2a3557"/>`;
+
+  svg.setAttribute("width", totalW);
+  svg.setAttribute("height", H);
+  svg.setAttribute("viewBox", `0 0 ${totalW} ${H}`);
+  svg.style.width = totalW+"px";
+  svg.innerHTML = content;
 
   svg.querySelectorAll(".fastbar").forEach(rect=>{
-    const show = ()=>{
+    const show = (ev)=>{
+      if(ev) ev.preventDefault();
       wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
       const rectBox = rect.getBoundingClientRect();
       const wrapBox = wrap.getBoundingClientRect();
       const tip = document.createElement("div");
       tip.className = "tooltip-pt";
       tip.textContent = rect.dataset.tip;
-      tip.style.left = (rectBox.left - wrapBox.left + rectBox.width/2) + "px";
+      tip.style.left = (rectBox.left - wrapBox.left + wrap.scrollLeft + rectBox.width/2) + "px";
       tip.style.top = (rectBox.top - wrapBox.top) + "px";
       wrap.appendChild(tip);
       clearTimeout(rect._t);
       rect._t = setTimeout(()=>tip.remove(), 2500);
     };
-    rect.addEventListener("touchstart", show, {passive:true});
+    rect.addEventListener("touchstart", show, {passive:false});
+    rect.addEventListener("click", show);
     rect.addEventListener("mouseenter", show);
   });
+
+  wrap.scrollLeft = wrap.scrollWidth;
 }
 
 /* ============ WEIGHT LOGIC ============ */
@@ -777,6 +838,12 @@ function calcBMI(kg, heightCm){
   return kg/(m*m);
 }
 function bmiClass(bmi){
+  if(state.gender==="f"){
+    if(bmi<19) return {cls:"bmi-under", label:"Sottopeso"};
+    if(bmi<24) return {cls:"bmi-normal", label:"Normopeso"};
+    if(bmi<29) return {cls:"bmi-over", label:"Sovrappeso"};
+    return {cls:"bmi-obese", label:"Obesità"};
+  }
   if(bmi<18.5) return {cls:"bmi-under", label:"Sottopeso"};
   if(bmi<25) return {cls:"bmi-normal", label:"Normopeso"};
   if(bmi<30) return {cls:"bmi-over", label:"Sovrappeso"};
@@ -918,81 +985,119 @@ document.getElementById("weightPeriodSel").addEventListener("click", (e)=>{
   renderWeightChart();
 });
 
+function calcYTicks(minY, maxY){
+  const range = maxY - minY;
+  const candidates = [1,2,5,10,20,25,50];
+  const roughStep = range / 3.2;
+  let step = candidates.find(c=>c>=roughStep) || Math.ceil(roughStep);
+  let ticks = [];
+  let t = Math.ceil(minY/step)*step;
+  while(t <= maxY + 0.001){ ticks.push(t); t += step; }
+  if(ticks.length < 2){
+    step = step/2;
+    ticks = [];
+    t = Math.ceil(minY/step)*step;
+    while(t <= maxY + 0.001){ ticks.push(t); t += step; }
+  }
+  return ticks;
+}
+
 function renderWeightChart(){
   const svg = document.getElementById("weightChart");
   const wrap = document.getElementById("weightChartWrap");
   wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
   if(state.weights.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
 
-  const sorted = [...state.weights].sort((a,b)=>new Date(a.at)-new Date(b.at));
-  let points = [];
-  if(weightPeriod==="day"){
-    points = sorted.map(w=>({x:new Date(w.at), y:w.weight_kg}));
-  } else {
-    const groups = {};
-    sorted.forEach(w=>{
-      const d = new Date(w.at);
-      let key;
-      if(weightPeriod==="week"){
-        const monday = new Date(d); monday.setDate(d.getDate()-((d.getDay()+6)%7));
-        key = monday.toISOString().slice(0,10);
-      } else {
-        key = d.toISOString().slice(0,7);
-      }
-      if(!groups[key]) groups[key]=[];
-      groups[key].push({w:w.weight_kg, d});
-    });
-    points = Object.keys(groups).sort().map(k=>{
-      const arr = groups[k];
-      const avg = arr.reduce((a,b)=>a+b.w,0)/arr.length;
-      return {x: new Date(k), y: avg};
-    });
-  }
+  let slots;
+  if(weightPeriod==="day") slots = buildDaySlots(30);
+  else if(weightPeriod==="week") slots = buildWeekSlots(12);
+  else slots = buildMonthSlots(12);
 
-  if(points.length===0){ svg.innerHTML=''; return; }
-  const W=320,H=180,padL=34,padR=12,padT=16,padB=26;
-  const ys = points.map(p=>p.y);
-  let minY = Math.min(...ys), maxY = Math.max(...ys);
+  const byKey = {};
+  state.weights.forEach(w=>{
+    const d = new Date(w.at);
+    let key;
+    if(weightPeriod==="day") key = d.toISOString().slice(0,10);
+    else if(weightPeriod==="week"){ const monday=new Date(d); monday.setHours(0,0,0,0); monday.setDate(d.getDate()-((d.getDay()+6)%7)); key = monday.toISOString().slice(0,10); }
+    else key = `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+    if(!byKey[key]) byKey[key]=[];
+    byKey[key].push(w.weight_kg);
+  });
+
+  const points = slots.map(s=>{
+    const arr = byKey[s.key];
+    if(!arr) return {label:s.label, y:null};
+    const avg = arr.reduce((a,b)=>a+b,0)/arr.length;
+    return {label:s.label, y:avg};
+  });
+
+  const existingY = points.filter(p=>p.y!==null).map(p=>p.y);
+  if(existingY.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
+
+  let minY = Math.min(...existingY), maxY = Math.max(...existingY);
   if(minY===maxY){ minY-=1; maxY+=1; }
-  const margin = (maxY-minY)*0.15 || 1;
+  const margin = (maxY-minY)*0.2 || 1;
   minY -= margin; maxY += margin;
   const rangeY = maxY-minY;
+
+  const slotW = weightPeriod==="day" ? 28 : 44;
+  const padL=36, padR=14, padT=16, padB=26;
   const n = points.length;
+  const totalW = padL + padR + n*slotW;
+  const H = 180;
 
-  const px = (i)=> n===1 ? W/2 : padL + (i/(n-1))*(W-padL-padR);
+  const px = (i)=> padL + i*slotW + slotW/2;
   const py = (y)=> padT + (1-(y-minY)/rangeY)*(H-padT-padB);
+  const dispY = (y)=> state.unit==="imperial" ? kgToLb(y) : y;
 
-  let path = points.map((p,i)=> `${i===0?"M":"L"} ${px(i).toFixed(1)} ${py(p.y).toFixed(1)}`).join(" ");
+  // path con interruzioni dove mancano i dati
+  let path = "";
+  let drawing = false;
+  points.forEach((p,i)=>{
+    if(p.y===null){ drawing=false; return; }
+    path += `${drawing?"L":"M"} ${px(i).toFixed(1)} ${py(p.y).toFixed(1)} `;
+    drawing = true;
+  });
 
-  // y-axis labels (3 levels)
-  const yTop = maxY, yMid = (maxY+minY)/2, yBot = minY;
-  const dispY = (y)=> state.unit==="imperial" ? kgToLb(y).toFixed(1) : y.toFixed(1);
-
-  // x-axis labels (dates), show ~4-5 evenly spaced
-  const labelCount = Math.min(n, 5);
+  // etichette asse X: mostra ogni slot se pochi, altrimenti dirada
+  const labelEvery = n<=14 ? 1 : Math.ceil(n/14);
   let xLabels = "";
-  for(let li=0; li<labelCount; li++){
-    const idx = labelCount===1 ? 0 : Math.round(li*(n-1)/(labelCount-1));
-    const d = points[idx].x;
-    const lbl = weightPeriod==="month" ? `${pad(d.getMonth()+1)}/${d.getFullYear().toString().slice(2)}` : `${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
-    xLabels += `<text x="${px(idx).toFixed(1)}" y="${H-8}" fill="#8d97b8" font-size="8" text-anchor="middle">${lbl}</text>`;
-  }
+  points.forEach((p,i)=>{
+    if(i%labelEvery===0 || i===n-1){
+      xLabels += `<text x="${px(i).toFixed(1)}" y="${H-8}" fill="#8d97b8" font-size="8" text-anchor="middle">${p.label}</text>`;
+    }
+  });
 
-  let dots = points.map((p,i)=> {
+  // griglia orizzontale a kg interi (in unità di visualizzazione corrente)
+  const dMin = dispY(minY), dMax = dispY(maxY);
+  const yTicks = calcYTicks(dMin, dMax);
+  let gridLines = "";
+  yTicks.forEach(tickVal=>{
+    // riconverto in kg per calcolare la posizione y
+    const kgVal = state.unit==="imperial" ? lbToKg(tickVal) : tickVal;
+    const yPos = py(kgVal);
+    gridLines += `<line x1="${padL}" y1="${yPos.toFixed(1)}" x2="${totalW-padR}" y2="${yPos.toFixed(1)}" stroke="#2a3557" stroke-width="1"/>`;
+    gridLines += `<text x="2" y="${(yPos+3).toFixed(1)}" fill="#8d97b8" font-size="9">${tickVal}</text>`;
+  });
+
+  let dots = "";
+  points.forEach((p,i)=>{
+    if(p.y===null) return;
     const cx = px(i).toFixed(1), cy = py(p.y).toFixed(1);
-    const val = dispY(p.y), date = p.x.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit'});
-    return `<circle cx="${cx}" cy="${cy}" r="4.5" fill="#5b8def" stroke="#0f172a" stroke-width="1.5" class="wpt-visual"/>
-      <circle cx="${cx}" cy="${cy}" r="16" fill="transparent" class="wpt" data-val="${val}" data-date="${date}" style="cursor:pointer;"/>`;
-  }).join("");
+    const val = dispY(p.y).toFixed(1);
+    dots += `<circle cx="${cx}" cy="${cy}" r="4.5" fill="#5b8def" stroke="#0f172a" stroke-width="1.5" class="wpt-visual"/>
+      <circle cx="${cx}" cy="${cy}" r="16" fill="transparent" class="wpt" data-val="${val}" data-date="${p.label}" style="cursor:pointer;"/>`;
+  });
 
+  svg.setAttribute("width", totalW);
+  svg.setAttribute("height", H);
+  svg.setAttribute("viewBox", `0 0 ${totalW} ${H}`);
+  svg.style.width = totalW+"px";
   svg.innerHTML = `
-    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="#2a3557"/>
-    <line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="#2a3557"/>
-    <text x="2" y="${padT+4}" fill="#8d97b8" font-size="9">${dispY(yTop)}</text>
-    <text x="2" y="${py(yMid)+3}" fill="#8d97b8" font-size="9">${dispY(yMid)}</text>
-    <text x="2" y="${H-padB+3}" fill="#8d97b8" font-size="9">${dispY(yBot)}</text>
+    ${gridLines}
+    <line x1="${padL}" y1="${H-padB}" x2="${totalW-padR}" y2="${H-padB}" stroke="#2a3557"/>
     ${xLabels}
-    <path d="${path}" fill="none" stroke="#5b8def" stroke-width="2"/>
+    <path d="${path.trim()}" fill="none" stroke="#5b8def" stroke-width="2"/>
     ${dots}
   `;
 
@@ -1005,7 +1110,7 @@ function renderWeightChart(){
       const tip = document.createElement("div");
       tip.className = "tooltip-pt";
       tip.textContent = `${dot.dataset.val} ${weightUnitLabel()} · ${dot.dataset.date}`;
-      tip.style.left = (dotBox.left - wrapBox.left + dotBox.width/2) + "px";
+      tip.style.left = (dotBox.left - wrapBox.left + wrap.scrollLeft + dotBox.width/2) + "px";
       tip.style.top = (dotBox.top - wrapBox.top) + "px";
       wrap.appendChild(tip);
       clearTimeout(dot._t);
@@ -1015,6 +1120,8 @@ function renderWeightChart(){
     dot.addEventListener("click", show);
     dot.addEventListener("mouseenter", show);
   });
+
+  wrap.scrollLeft = wrap.scrollWidth;
 }
 
 /* ============ SETTINGS ============ */
@@ -1026,6 +1133,16 @@ document.getElementById("unitSeg").addEventListener("click", (e)=>{
   lsSet(LS.unit, state.unit);
   renderHeightField();
   renderWeightCard(); renderWeightHistory(); renderWeightChart();
+});
+
+document.getElementById("genderSeg").addEventListener("click", (e)=>{
+  const b = e.target.closest("button"); if(!b) return;
+  document.querySelectorAll("#genderSeg button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active");
+  state.gender = b.dataset.g;
+  lsSet(LS.gender, state.gender);
+  renderWeightCard();
+  if(_currentUser) saveGenderToSupabase(state.gender);
 });
 
 function renderHeightField(){
@@ -1135,6 +1252,18 @@ async function syncFastToSupabase(fast, isUpdate){
     setConnStatus(true);
   }catch(e){ setConnStatus(false); }
 }
+async function syncActiveFastStart(activeFast, isUpdate){
+  if(!_currentUser) return;
+  try{
+    if(isUpdate){
+      await sb.from("fasting_logs").update({start_at: activeFast.start_at}).eq("id", activeFast.id);
+    } else {
+      // nuova riga "in corso": end_at null, verrà valorizzato quando si termina il digiuno
+      await sb.from("fasting_logs").upsert({id: activeFast.id, user_id: _currentUser.id, start_at: activeFast.start_at, end_at: null}, {onConflict:"id"});
+    }
+    setConnStatus(true);
+  }catch(e){ setConnStatus(false); }
+}
 async function syncWeightToSupabase(w, isUpdate){
   if(!_currentUser) return;
   try{
@@ -1149,11 +1278,18 @@ async function syncWeightToSupabase(w, isUpdate){
 async function loadHeightFromSupabase(){
   if(!_currentUser) return;
   try{
-    const {data,error} = await sb.from("profiles").select("height_cm").eq("id", _currentUser.id).maybeSingle();
-    if(!error && data && data.height_cm){
-      state.height = data.height_cm;
-      lsSet(LS.height, state.height);
-      renderHeightField();
+    const {data,error} = await sb.from("profiles").select("height_cm, gender").eq("id", _currentUser.id).maybeSingle();
+    if(!error && data){
+      if(data.height_cm){
+        state.height = data.height_cm;
+        lsSet(LS.height, state.height);
+        renderHeightField();
+      }
+      if(data.gender){
+        state.gender = data.gender;
+        lsSet(LS.gender, state.gender);
+        document.querySelectorAll("#genderSeg button").forEach(x=>x.classList.toggle("active", x.dataset.g===state.gender));
+      }
       renderWeightCard();
     }
   }catch(e){}
@@ -1162,6 +1298,12 @@ async function saveHeightToSupabase(cm){
   if(!_currentUser) return;
   try{
     await sb.from("profiles").upsert({id: _currentUser.id, height_cm: cm}, {onConflict:"id"});
+  }catch(e){}
+}
+async function saveGenderToSupabase(gender){
+  if(!_currentUser) return;
+  try{
+    await sb.from("profiles").upsert({id: _currentUser.id, gender}, {onConflict:"id"});
   }catch(e){}
 }
 function setConnStatus(ok){
@@ -1175,15 +1317,19 @@ async function pullFromSupabase(){
     const {data: fastsData, error: e1} = await sb.from("fasting_logs").select("*").eq("user_id", _currentUser.id).order("start_at", {ascending:false});
     const {data: weightsData, error: e2} = await sb.from("weight_logs").select("*").eq("user_id", _currentUser.id).order("at", {ascending:false});
     if(!e1 && fastsData){
-      state.fasts = fastsData.map(f=>({id:f.id, start_at:f.start_at, end_at:f.end_at}));
+      const completed = fastsData.filter(f=>f.end_at);
+      const active = fastsData.find(f=>!f.end_at);
+      state.fasts = completed.map(f=>({id:f.id, start_at:f.start_at, end_at:f.end_at}));
       lsSet(LS.fasts, state.fasts);
+      state.activeFast = active ? {id: active.id, start_at: active.start_at} : null;
+      lsSet(LS.activeFast, state.activeFast);
     }
     if(!e2 && weightsData){
       state.weights = weightsData.map(w=>({id:w.id, weight_kg:w.weight_kg, at:w.at}));
       lsSet(LS.weights, state.weights);
     }
     setConnStatus(true);
-    renderFastHistory(); renderFastChart(); renderWeightCard(); renderWeightHistory(); renderWeightChart();
+    renderFastHero(); renderFastHistory(); renderFastChart(); renderWeightCard(); renderWeightHistory(); renderWeightChart();
   }catch(e){ setConnStatus(false); }
 }
 
@@ -1251,6 +1397,7 @@ function enterApp(user){
 function init(){
   document.querySelector(`#unitSeg button[data-u="${state.unit}"]`).classList.add("active");
   document.querySelectorAll("#unitSeg button").forEach(b=>{ if(b.dataset.u!==state.unit) b.classList.remove("active"); });
+  document.querySelectorAll("#genderSeg button").forEach(b=>{ b.classList.toggle("active", b.dataset.g===state.gender); });
   renderHeightField();
   renderFastHero();
   renderFastHistory();
