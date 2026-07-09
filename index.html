@@ -837,16 +837,15 @@ function calcBMI(kg, heightCm){
   const m = heightCm/100;
   return kg/(m*m);
 }
+function bmiThresholds(){
+  // [sottopeso_sotto, normopeso_sotto, sovrappeso_sotto] — oltre = obesità
+  return state.gender==="f" ? [19,24,29] : [18.5,25,30];
+}
 function bmiClass(bmi){
-  if(state.gender==="f"){
-    if(bmi<19) return {cls:"bmi-under", label:"Sottopeso"};
-    if(bmi<24) return {cls:"bmi-normal", label:"Normopeso"};
-    if(bmi<29) return {cls:"bmi-over", label:"Sovrappeso"};
-    return {cls:"bmi-obese", label:"Obesità"};
-  }
-  if(bmi<18.5) return {cls:"bmi-under", label:"Sottopeso"};
-  if(bmi<25) return {cls:"bmi-normal", label:"Normopeso"};
-  if(bmi<30) return {cls:"bmi-over", label:"Sovrappeso"};
+  const [t1,t2,t3] = bmiThresholds();
+  if(bmi<t1) return {cls:"bmi-under", label:"Sottopeso"};
+  if(bmi<t2) return {cls:"bmi-normal", label:"Normopeso"};
+  if(bmi<t3) return {cls:"bmi-over", label:"Sovrappeso"};
   return {cls:"bmi-obese", label:"Obesità"};
 }
 
@@ -868,14 +867,31 @@ function renderWeightCard(){
     const bmi = calcBMI(latest.weight_kg, state.height);
     const info = bmiClass(bmi);
     badgeWrap.innerHTML = `<span class="bmi-badge ${info.cls}">BMI ${bmi.toFixed(1)} · ${info.label}</span>`;
-    // scale 14 to 42
-    const clamped = Math.min(Math.max(bmi,14),42);
-    const pct = ((clamped-14)/(42-14))*100;
+
+    // scala fissa 14–42, ma le fasce colorate si spostano in base alle soglie del sesso selezionato
+    const SCALE_MIN=14, SCALE_MAX=42;
+    const [t1,t2,t3] = bmiThresholds();
+    const toPct = (v)=> ((Math.min(Math.max(v,SCALE_MIN),SCALE_MAX)-SCALE_MIN)/(SCALE_MAX-SCALE_MIN))*100;
+    const pUnderEnd = toPct(t1);
+    const pNormalEnd = toPct(t2);
+    const pOverEnd = toPct(t3);
+    // dentro "sottopeso" manteniamo una sfumatura blu scuro->blu chiaro come prima (grave -> lieve)
+    const pUnderMid = pUnderEnd*0.65;
+    const gradient = `linear-gradient(to right,
+      #1e3a8a 0%, #1e3a8a ${pUnderMid.toFixed(1)}%,
+      #38bdf8 ${pUnderMid.toFixed(1)}%, #38bdf8 ${pUnderEnd.toFixed(1)}%,
+      #3ecf8e ${pUnderEnd.toFixed(1)}%, #3ecf8e ${pNormalEnd.toFixed(1)}%,
+      #d4a017 ${pNormalEnd.toFixed(1)}%, #d4a017 ${pOverEnd.toFixed(1)}%,
+      #e0692a ${pOverEnd.toFixed(1)}%, #e0692a ${Math.min(pOverEnd+15,100).toFixed(1)}%,
+      #ef5b6b ${Math.min(pOverEnd+15,100).toFixed(1)}%, #ef5b6b 100%)`;
+
+    const clamped = Math.min(Math.max(bmi,SCALE_MIN),SCALE_MAX);
+    const pct = toPct(clamped);
     barWrap.innerHTML = `
       <div class="bmi-bar-wrap">
         <div class="bmi-marker" style="left:${pct}%"></div>
-        <div class="bmi-bar"></div>
-        <div class="bmi-scale"><span>15</span><span>18.5</span><span>25</span><span>30</span><span>35</span><span>40</span></div>
+        <div class="bmi-bar" style="background:${gradient}"></div>
+        <div class="bmi-scale"><span>${t1}</span><span>${t2}</span><span>${t3}</span></div>
       </div>`;
   } else {
     badgeWrap.innerHTML = `<span class="bmi-badge" style="background:#2a355780;color:#8d97b8">Imposta altezza per BMI</span>`;
