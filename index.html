@@ -200,7 +200,7 @@
     <div class="card fast-hero">
       <div class="label" id="fastLabel">Non stai digiunando</div>
       <div class="timer eating" id="fastTimer">00:00:00</div>
-      <div class="since" id="fastSince"></div>
+      <div class="since" id="fastSince" style="display:flex; align-items:center; justify-content:center; gap:8px;"></div>
       <button class="btn btn-start" id="fastToggleBtn"><i class="ti ti-player-play"></i> Inizia digiuno</button>
     </div>
 
@@ -217,6 +217,7 @@
     <div class="card">
       <h2>Cronologia</h2>
       <div class="hist-list" id="fastHistList"><div class="empty">Nessun digiuno registrato</div></div>
+      <button class="btn btn-secondary" id="addPastFastBtn" style="margin-top:14px;"><i class="ti ti-calendar-plus"></i> Aggiungi digiuno passato</button>
     </div>
   </section>
 
@@ -338,7 +339,39 @@
   </div>
 </div>
 
+<!-- Modal: digiuno (edit storico o inserimento manuale) -->
+<div class="modal-backdrop" id="fastEditModal">
+  <div class="modal">
+    <h3 id="fastEditModalTitle">Modifica digiuno</h3>
+    <div class="row">
+      <div class="field">
+        <label>Inizio - Data</label>
+        <input type="date" id="fastEditStartDate">
+      </div>
+      <div class="field">
+        <label>Inizio - Ora</label>
+        <input type="time" id="fastEditStartTime" step="60">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Fine - Data</label>
+        <input type="date" id="fastEditEndDate">
+      </div>
+      <div class="field">
+        <label>Fine - Ora</label>
+        <input type="time" id="fastEditEndTime" step="60">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="fastEditCancel">Annulla</button>
+      <button class="btn btn-start" id="fastEditConfirm">Salva</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
+
 
 </div> <!-- /appRoot -->
 
@@ -474,8 +507,8 @@ function renderFastHero(){
   if(state.activeFast){
     label.textContent = "Digiuno in corso";
     timer.className = "timer fasting";
-    const start = new Date(state.activeFast.start_at);
-    since.textContent = "Iniziato: " + fmtDateTime(state.activeFast.start_at);
+    since.innerHTML = `<span>Iniziato: ${fmtDateTime(state.activeFast.start_at)}</span>
+      <button class="icon-btn" style="padding:2px;" onclick="editActiveFastStart()"><i class="ti ti-edit"></i></button>`;
     btn.className = "btn btn-stop";
     btn.innerHTML = '<i class="ti ti-player-stop"></i> Termina digiuno';
     updateFastTimer();
@@ -492,6 +525,15 @@ function renderFastHero(){
     updateFastTimer();
   }
 }
+window.editActiveFastStart = function(){
+  if(!state.activeFast) return;
+  openTimeModal("Modifica inizio digiuno in corso", (iso)=>{
+    state.activeFast.start_at = iso;
+    lsSet(LS.activeFast, state.activeFast);
+    renderFastHero();
+    showToast("Inizio digiuno aggiornato");
+  }, state.activeFast.start_at);
+};
 
 function updateFastTimer(){
   const timer = document.getElementById("fastTimer");
@@ -545,8 +587,7 @@ function renderFastHistory(){
         <div class="meta">${fmtDateTime(f.start_at)} → ${fmtDateTime(f.end_at)}</div>
       </div>
       <div class="actions">
-        <button class="icon-btn" title="Modifica inizio" onclick="editFastStart('${f.id}')"><i class="ti ti-player-play"></i></button>
-        <button class="icon-btn" title="Modifica fine" onclick="editFastEnd('${f.id}')"><i class="ti ti-player-stop"></i></button>
+        <button class="icon-btn" onclick="openFastEditModal('${f.id}')"><i class="ti ti-edit"></i></button>
         <button class="icon-btn" onclick="deleteFast('${f.id}')"><i class="ti ti-trash"></i></button>
       </div>
     </div>`;
@@ -558,30 +599,70 @@ window.deleteFast = function(id){
   renderFastHistory(); renderFastChart();
   if(sb && _currentUser) sb.from("fasting_logs").delete().eq("id", id).then(()=>{});
 };
-window.editFastStart = function(id){
-  const f = state.fasts.find(x=>x.id===id);
-  if(!f) return;
-  openTimeModal("Modifica inizio digiuno", (iso)=>{
-    if(new Date(iso) >= new Date(f.end_at)){ showToast("L'inizio deve essere prima della fine"); return; }
-    f.start_at = iso;
+
+/* ─── Modale unico: edit storico digiuno o inserimento manuale passato ─── */
+let fastEditId = null; // null = nuovo inserimento
+window.openFastEditModal = function(id){
+  const maxDate = todayLocalStr();
+  document.getElementById("fastEditStartDate").max = maxDate;
+  document.getElementById("fastEditEndDate").max = maxDate;
+  if(id){
+    const f = state.fasts.find(x=>x.id===id);
+    if(!f) return;
+    fastEditId = id;
+    document.getElementById("fastEditModalTitle").textContent = "Modifica digiuno";
+    const ds = new Date(f.start_at), de = new Date(f.end_at);
+    document.getElementById("fastEditStartDate").value = `${ds.getFullYear()}-${pad(ds.getMonth()+1)}-${pad(ds.getDate())}`;
+    document.getElementById("fastEditStartTime").value = `${pad(ds.getHours())}:${pad(ds.getMinutes())}`;
+    document.getElementById("fastEditEndDate").value = `${de.getFullYear()}-${pad(de.getMonth()+1)}-${pad(de.getDate())}`;
+    document.getElementById("fastEditEndTime").value = `${pad(de.getHours())}:${pad(de.getMinutes())}`;
+  } else {
+    fastEditId = null;
+    document.getElementById("fastEditModalTitle").textContent = "Aggiungi digiuno passato";
+    document.getElementById("fastEditStartDate").value = nowDateStr();
+    document.getElementById("fastEditStartTime").value = "20:00";
+    document.getElementById("fastEditEndDate").value = nowDateStr();
+    document.getElementById("fastEditEndTime").value = nowTimeStr();
+  }
+  document.getElementById("fastEditModal").classList.add("active");
+};
+document.getElementById("addPastFastBtn").addEventListener("click", ()=> openFastEditModal(null));
+document.getElementById("fastEditCancel").addEventListener("click", ()=>{
+  document.getElementById("fastEditModal").classList.remove("active");
+  fastEditId = null;
+});
+document.getElementById("fastEditConfirm").addEventListener("click", async ()=>{
+  const sd = document.getElementById("fastEditStartDate").value;
+  const st = document.getElementById("fastEditStartTime").value;
+  const ed = document.getElementById("fastEditEndDate").value;
+  const et = document.getElementById("fastEditEndTime").value;
+  if(!sd||!st||!ed||!et){ showToast("Compila tutti i campi"); return; }
+  const startISO = toISO(sd, st);
+  const endISO = toISO(ed, et);
+  const now = new Date();
+  if(new Date(startISO) > now || new Date(endISO) > now){ showToast("Non puoi selezionare una data futura"); return; }
+  if(new Date(endISO) <= new Date(startISO)){ showToast("La fine deve essere dopo l'inizio"); return; }
+
+  if(fastEditId){
+    const f = state.fasts.find(x=>x.id===fastEditId);
+    if(f){ f.start_at = startISO; f.end_at = endISO; }
     lsSet(LS.fasts, state.fasts);
+    document.getElementById("fastEditModal").classList.remove("active");
     renderFastHistory(); renderFastChart();
     showToast("Digiuno aggiornato");
-    if(sb) syncFastToSupabase(f, true);
-  }, f.start_at);
-};
-window.editFastEnd = function(id){
-  const f = state.fasts.find(x=>x.id===id);
-  if(!f) return;
-  openTimeModal("Modifica fine digiuno", (iso)=>{
-    if(new Date(iso) <= new Date(f.start_at)){ showToast("La fine deve essere dopo l'inizio"); return; }
-    f.end_at = iso;
+    if(sb && f) await syncFastToSupabase(f, true);
+  } else {
+    const f = {id: uid(), start_at: startISO, end_at: endISO};
+    state.fasts.push(f);
+    state.fasts.sort((a,b)=>new Date(b.start_at)-new Date(a.start_at));
     lsSet(LS.fasts, state.fasts);
+    document.getElementById("fastEditModal").classList.remove("active");
     renderFastHistory(); renderFastChart();
-    showToast("Digiuno aggiornato");
-    if(sb) syncFastToSupabase(f, true);
-  }, f.end_at);
-};
+    showToast("Digiuno aggiunto");
+    if(sb) await syncFastToSupabase(f);
+  }
+  fastEditId = null;
+});
 
 let fastPeriod = "day";
 document.getElementById("fastPeriodSel").addEventListener("click", (e)=>{
@@ -897,7 +978,12 @@ function renderWeightChart(){
     xLabels += `<text x="${px(idx).toFixed(1)}" y="${H-8}" fill="#8d97b8" font-size="8" text-anchor="middle">${lbl}</text>`;
   }
 
-  let dots = points.map((p,i)=> `<circle cx="${px(i).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="4.5" fill="#5b8def" stroke="#0f172a" stroke-width="1.5" class="wpt" data-val="${dispY(p.y)}" data-date="${p.x.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit'})}"/>`).join("");
+  let dots = points.map((p,i)=> {
+    const cx = px(i).toFixed(1), cy = py(p.y).toFixed(1);
+    const val = dispY(p.y), date = p.x.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit'});
+    return `<circle cx="${cx}" cy="${cy}" r="4.5" fill="#5b8def" stroke="#0f172a" stroke-width="1.5" class="wpt-visual"/>
+      <circle cx="${cx}" cy="${cy}" r="16" fill="transparent" class="wpt" data-val="${val}" data-date="${date}" style="cursor:pointer;"/>`;
+  }).join("");
 
   svg.innerHTML = `
     <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${H-padB}" stroke="#2a3557"/>
@@ -911,7 +997,8 @@ function renderWeightChart(){
   `;
 
   svg.querySelectorAll(".wpt").forEach(dot=>{
-    const show = ()=>{
+    const show = (ev)=>{
+      if(ev) ev.preventDefault();
       wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
       const dotBox = dot.getBoundingClientRect();
       const wrapBox = wrap.getBoundingClientRect();
@@ -924,7 +1011,8 @@ function renderWeightChart(){
       clearTimeout(dot._t);
       dot._t = setTimeout(()=>tip.remove(), 2500);
     };
-    dot.addEventListener("touchstart", show, {passive:true});
+    dot.addEventListener("touchstart", show, {passive:false});
+    dot.addEventListener("click", show);
     dot.addEventListener("mouseenter", show);
   });
 }
