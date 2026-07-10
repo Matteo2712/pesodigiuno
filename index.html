@@ -114,13 +114,17 @@
       #ef5b6b 92.9%, #ef5b6b 100%);}
   .bmi-marker{position:absolute; top:0; transform:translateX(-50%); font-size:0; width:0; height:0;
     border-left:6px solid transparent; border-right:6px solid transparent; border-top:8px solid #fff;}
-  .bmi-scale{display:flex; justify-content:space-between; font-size:9px; color:var(--muted); margin-top:4px;}
+  .bmi-scale{position:relative; height:14px; margin-top:4px;}
+  .bmi-scale span{position:absolute; transform:translateX(-50%); font-size:9px; color:var(--muted); white-space:nowrap;}
   .tooltip-pt{position:absolute; background:var(--card2); border:1px solid var(--border); color:var(--text);
     padding:6px 10px; border-radius:8px; font-size:12px; pointer-events:none; z-index:5; white-space:nowrap;
     transform:translate(-50%,-115%); box-shadow:0 4px 12px rgba(0,0,0,.3);}
   .chart-wrap{position:relative; overflow-x:auto; -webkit-overflow-scrolling:touch;}
   .chart-wrap::-webkit-scrollbar{height:4px;}
   .chart-wrap::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
+  .y-axis-fixed{position:absolute; left:0; top:0; height:180px; width:44px; pointer-events:none; z-index:3;
+    background:linear-gradient(to right, var(--card) 78%, transparent);}
+  .y-axis-fixed span{position:absolute; left:2px; font-size:9px; color:var(--muted); white-space:nowrap;}
   .load-more-btn{width:100%; padding:10px; margin-top:8px; border-radius:10px; border:1px solid var(--border);
     background:var(--card2); color:var(--muted); font-size:13px; font-weight:600; cursor:pointer;}
   /* ── LOGIN SCREEN (stesso stile di CaliMat) ── */
@@ -203,7 +207,7 @@
       <div class="label" id="fastLabel">Non stai digiunando</div>
       <div class="timer eating" id="fastTimer">00:00:00</div>
       <div class="since" id="fastSince" style="display:flex; align-items:center; justify-content:center; gap:8px;"></div>
-      <button class="btn btn-start" id="fastToggleBtn"><i class="ti ti-player-play"></i> Inizia digiuno</button>
+      <button class="btn btn-start" id="fastToggleBtn">Inizia digiuno</button>
     </div>
 
     <div class="card">
@@ -213,7 +217,10 @@
         <button data-p="week">Settimane</button>
         <button data-p="month">Mesi</button>
       </div>
-      <div class="chart-wrap"><svg class="chart" id="fastChart" viewBox="0 0 320 180"></svg></div>
+      <div style="position:relative;">
+        <div class="chart-wrap"><svg class="chart" id="fastChart" viewBox="0 0 320 180"></svg></div>
+        <div class="y-axis-fixed" id="fastYAxisFixed"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -244,7 +251,10 @@
         <button data-p="week">Settimane</button>
         <button data-p="month">Mesi</button>
       </div>
-      <div class="chart-wrap" id="weightChartWrap"><svg class="chart" id="weightChart" viewBox="0 0 320 180"></svg></div>
+      <div style="position:relative;">
+        <div class="chart-wrap" id="weightChartWrap"><svg class="chart" id="weightChart" viewBox="0 0 320 180"></svg></div>
+        <div class="y-axis-fixed" id="weightYAxisFixed"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -269,7 +279,7 @@
     <div class="card">
       <h2>Profilo</h2>
       <div class="settings-row">
-        <div class="lbl">Sesso<small>Usato per il calcolo del BMI</small></div>
+        <div class="lbl">Sesso<small>Dato personale, salvato nel profilo</small></div>
         <div class="seg" id="genderSeg">
           <button data-g="m" class="active">Uomo</button>
           <button data-g="f">Donna</button>
@@ -442,7 +452,8 @@ function fmtHoursMinutes(hoursFloat){
   return `${h}h${pad(m)}'`;
 }
 function toISO(dateStr, timeStr){ return new Date(`${dateStr}T${timeStr}:00`).toISOString(); }
-function nowDateStr(){ const d=new Date(); return d.toISOString().slice(0,10); }
+function nowDateStr(){ const d=new Date(); return localDateKey(d); }
+function localDateKey(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 function todayLocalStr(){
   const d=new Date();
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -529,7 +540,7 @@ function renderFastHero(){
     since.innerHTML = `<span>Iniziato: ${fmtDateTime(state.activeFast.start_at)}</span>
       <button class="icon-btn" style="padding:2px;" onclick="editActiveFastStart()"><i class="ti ti-edit"></i></button>`;
     btn.className = "btn btn-stop";
-    btn.innerHTML = '<i class="ti ti-player-stop"></i> Termina digiuno';
+    btn.innerHTML = 'Termina digiuno';
     updateFastTimer();
   } else {
     label.textContent = "Non stai digiunando";
@@ -537,7 +548,7 @@ function renderFastHero(){
     const lastEnd = getLastFastEnd();
     since.textContent = lastEnd ? "Ultimo digiuno terminato: " + fmtDateTime(lastEnd) : "";
     btn.className = "btn btn-start";
-    btn.innerHTML = '<i class="ti ti-player-play"></i> Inizia digiuno';
+    btn.innerHTML = 'Inizia digiuno';
     updateFastTimer();
   }
 }
@@ -708,7 +719,7 @@ function buildDaySlots(count){
   const today = new Date(); today.setHours(0,0,0,0);
   for(let i=count-1;i>=0;i--){
     const d = new Date(today); d.setDate(today.getDate()-i);
-    slots.push({key: d.toISOString().slice(0,10), label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, date:d});
+    slots.push({key: localDateKey(d), label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, date:d});
   }
   return slots;
 }
@@ -718,7 +729,7 @@ function buildWeekSlots(count){
   const monday = new Date(today); monday.setDate(today.getDate()-((today.getDay()+6)%7));
   for(let i=count-1;i>=0;i--){
     const d = new Date(monday); d.setDate(monday.getDate()-7*i);
-    slots.push({key: d.toISOString().slice(0,10), label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, date:d});
+    slots.push({key: localDateKey(d), label:`${pad(d.getDate())}/${pad(d.getMonth()+1)}`, date:d});
   }
   return slots;
 }
@@ -749,8 +760,8 @@ function renderFastChart(){
     const d = new Date(f.start_at);
     const h = (new Date(f.end_at)-new Date(f.start_at))/3600000;
     let key;
-    if(fastPeriod==="day") key = d.toISOString().slice(0,10);
-    else if(fastPeriod==="week"){ const monday=new Date(d); monday.setHours(0,0,0,0); monday.setDate(d.getDate()-((d.getDay()+6)%7)); key = monday.toISOString().slice(0,10); }
+    if(fastPeriod==="day") key = localDateKey(d);
+    else if(fastPeriod==="week"){ const monday=new Date(d); monday.setHours(0,0,0,0); monday.setDate(d.getDate()-((d.getDay()+6)%7)); key = localDateKey(monday); }
     else key = `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
     if(!byKey[key]) byKey[key]=[];
     byKey[key].push(h);
@@ -786,15 +797,17 @@ function renderFastChart(){
   });
 
   const gridY = H-padB;
-  // linee di riferimento fisse 16h e 20h
-  [16,20].forEach(hLine=>{
+  // linee di riferimento fisse 16h e 24h (le linee scorrono col grafico, le etichette restano fisse nell'overlay)
+  let yAxisHtml = "";
+  [16,24].forEach(hLine=>{
     if(hLine<=maxH){
       const y = yForH(hLine);
-      content += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${totalW-padR}" y2="${y.toFixed(1)}" stroke="#f0a34e" stroke-width="1" stroke-dasharray="3,3"/>`;
-      content += `<text x="2" y="${(y+3).toFixed(1)}" fill="#f0a34e" font-size="8">${hLine}h</text>`;
+      content += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${totalW-padR}" y2="${y.toFixed(1)}" stroke="#5b8def" stroke-width="1"/>`;
+      yAxisHtml += `<span style="top:${(y-6).toFixed(1)}px; color:#5b8def;">${hLine}h</span>`;
     }
   });
   content += `<line x1="${padL}" y1="${gridY}" x2="${totalW-padR}" y2="${gridY}" stroke="#2a3557"/>`;
+  document.getElementById("fastYAxisFixed").innerHTML = yAxisHtml;
 
   svg.setAttribute("width", totalW);
   svg.setAttribute("height", H);
@@ -838,8 +851,9 @@ function calcBMI(kg, heightCm){
   return kg/(m*m);
 }
 function bmiThresholds(){
-  // [sottopeso_sotto, normopeso_sotto, sovrappeso_sotto] — oltre = obesità
-  return state.gender==="f" ? [19,24,29] : [18.5,25,30];
+  // Soglie standard OMS, identiche per uomo e donna (il BMI non varia per sesso).
+  // Il campo "sesso" resta salvato nel profilo per usi futuri, ma non influenza più questo calcolo.
+  return [18.5,25,30];
 }
 function bmiClass(bmi){
   const [t1,t2,t3] = bmiThresholds();
@@ -891,7 +905,11 @@ function renderWeightCard(){
       <div class="bmi-bar-wrap">
         <div class="bmi-marker" style="left:${pct}%"></div>
         <div class="bmi-bar" style="background:${gradient}"></div>
-        <div class="bmi-scale"><span>${t1}</span><span>${t2}</span><span>${t3}</span></div>
+        <div class="bmi-scale">
+          <span style="left:${pUnderEnd}%">${t1}</span>
+          <span style="left:${pNormalEnd}%">${t2}</span>
+          <span style="left:${pOverEnd}%">${t3}</span>
+        </div>
       </div>`;
   } else {
     badgeWrap.innerHTML = `<span class="bmi-badge" style="background:#2a355780;color:#8d97b8">Imposta altezza per BMI</span>`;
@@ -1022,7 +1040,7 @@ function renderWeightChart(){
   const svg = document.getElementById("weightChart");
   const wrap = document.getElementById("weightChartWrap");
   wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
-  if(state.weights.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
+  if(state.weights.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; document.getElementById("weightYAxisFixed").innerHTML=""; return; }
 
   let slots;
   if(weightPeriod==="day") slots = buildDaySlots(30);
@@ -1033,8 +1051,8 @@ function renderWeightChart(){
   state.weights.forEach(w=>{
     const d = new Date(w.at);
     let key;
-    if(weightPeriod==="day") key = d.toISOString().slice(0,10);
-    else if(weightPeriod==="week"){ const monday=new Date(d); monday.setHours(0,0,0,0); monday.setDate(d.getDate()-((d.getDay()+6)%7)); key = monday.toISOString().slice(0,10); }
+    if(weightPeriod==="day") key = localDateKey(d);
+    else if(weightPeriod==="week"){ const monday=new Date(d); monday.setHours(0,0,0,0); monday.setDate(d.getDate()-((d.getDay()+6)%7)); key = localDateKey(monday); }
     else key = `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
     if(!byKey[key]) byKey[key]=[];
     byKey[key].push(w.weight_kg);
@@ -1048,7 +1066,7 @@ function renderWeightChart(){
   });
 
   const existingY = points.filter(p=>p.y!==null).map(p=>p.y);
-  if(existingY.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; return; }
+  if(existingY.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; document.getElementById("weightYAxisFixed").innerHTML=""; return; }
 
   let minY = Math.min(...existingY), maxY = Math.max(...existingY);
   if(minY===maxY){ minY-=1; maxY+=1; }
@@ -1057,7 +1075,7 @@ function renderWeightChart(){
   const rangeY = maxY-minY;
 
   const slotW = weightPeriod==="day" ? 28 : 44;
-  const padL=36, padR=14, padT=16, padB=26;
+  const padL=42, padR=14, padT=16, padB=26;
   const n = points.length;
   const totalW = padL + padR + n*slotW;
   const H = 180;
@@ -1087,14 +1105,17 @@ function renderWeightChart(){
   // griglia orizzontale a kg interi (in unità di visualizzazione corrente)
   const dMin = dispY(minY), dMax = dispY(maxY);
   const yTicks = calcYTicks(dMin, dMax);
+  const uLbl = weightUnitLabel();
   let gridLines = "";
+  let yAxisHtml = "";
   yTicks.forEach(tickVal=>{
     // riconverto in kg per calcolare la posizione y
     const kgVal = state.unit==="imperial" ? lbToKg(tickVal) : tickVal;
     const yPos = py(kgVal);
     gridLines += `<line x1="${padL}" y1="${yPos.toFixed(1)}" x2="${totalW-padR}" y2="${yPos.toFixed(1)}" stroke="#2a3557" stroke-width="1"/>`;
-    gridLines += `<text x="2" y="${(yPos+3).toFixed(1)}" fill="#8d97b8" font-size="9">${tickVal}</text>`;
+    yAxisHtml += `<span style="top:${(yPos-6).toFixed(1)}px;">${tickVal}${uLbl}</span>`;
   });
+  document.getElementById("weightYAxisFixed").innerHTML = yAxisHtml;
 
   let dots = "";
   points.forEach((p,i)=>{
