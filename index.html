@@ -101,6 +101,10 @@
     border:1px solid var(--border); color:var(--text); padding:10px 18px; border-radius:12px; font-size:13px;
     z-index:60; opacity:0; pointer-events:none; transition:opacity .2s;}
   .toast.show{opacity:1;}
+  .toast.undo-toast{display:flex; align-items:center; gap:12px; pointer-events:none;}
+  .toast.undo-toast.show{pointer-events:auto;}
+  .toast.undo-toast button{background:none; border:none; color:var(--accent); font-weight:700; font-size:13px;
+    cursor:pointer; padding:2px 4px; flex-shrink:0;}
   .bmi-bar-wrap{margin-top:14px; position:relative; padding-top:16px;}
   .bmi-bar{height:10px; border-radius:6px; width:100%; position:relative;
     background:linear-gradient(to right,
@@ -119,7 +123,7 @@
   .tooltip-pt{position:absolute; background:var(--card2); border:1px solid var(--border); color:var(--text);
     padding:6px 10px; border-radius:8px; font-size:12px; pointer-events:none; z-index:5; white-space:nowrap;
     transform:translate(-50%,-115%); box-shadow:0 4px 12px rgba(0,0,0,.3);}
-  .chart-wrap{position:relative; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .chart-wrap{position:relative; overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x;}
   .chart-wrap::-webkit-scrollbar{height:4px;}
   .chart-wrap::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
   .y-axis-fixed{position:absolute; left:0; top:0; height:180px; width:44px; pointer-events:none; z-index:3;
@@ -394,11 +398,24 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="toast undo-toast" id="undoToast">
+  <span id="undoToastMsg"></span>
+  <button id="undoToastBtn" type="button">Annulla</button>
+</div>
 
 
 </div> <!-- /appRoot -->
 
 <script>
+/* ============ SERVICE WORKER (permette l'apertura offline) ============ */
+if("serviceWorker" in navigator){
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("./sw.js").catch((e)=>{
+      console.warn("Registrazione service worker fallita:", e);
+    });
+  });
+}
+
 /* ============ CONFIG ============ */
 const SUPABASE_URL = 'https://edlvmkjctzhqoswpppds.supabase.co/';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVkbHZta2pjdHpocW9zd3BwcGRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNjEyMDEsImV4cCI6MjA5NjczNzIwMX0.Oq0TyYWG4LotZhH57LQtklUdVho_kQ15KlSs8KGO2AM';
@@ -468,6 +485,35 @@ function showToast(msg){
   t.textContent = msg; t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"), 2000);
 }
+
+/* ─── Toast con "Annulla" per le cancellazioni ───
+   Un solo undo "in sospeso" alla volta: se ne arriva uno nuovo mentre uno
+   precedente è ancora in attesa, quello precedente viene confermato subito
+   (onCommit) prima di mostrare il nuovo. */
+let _undoTimer = null;
+let _undoPending = null;
+function showUndoToast(msg, onUndo, onCommit){
+  _commitPendingUndo();
+  const t = document.getElementById("undoToast");
+  document.getElementById("undoToastMsg").textContent = msg;
+  t.classList.add("show");
+  _undoPending = {onUndo, onCommit};
+  _undoTimer = setTimeout(_commitPendingUndo, 4000);
+}
+function _commitPendingUndo(){
+  if(_undoTimer){ clearTimeout(_undoTimer); _undoTimer = null; }
+  if(!_undoPending) return;
+  const p = _undoPending; _undoPending = null;
+  document.getElementById("undoToast").classList.remove("show");
+  if(p.onCommit) p.onCommit();
+}
+document.getElementById("undoToastBtn").addEventListener("click", ()=>{
+  if(_undoTimer){ clearTimeout(_undoTimer); _undoTimer = null; }
+  if(!_undoPending) return;
+  const p = _undoPending; _undoPending = null;
+  document.getElementById("undoToast").classList.remove("show");
+  if(p.onUndo) p.onUndo();
+});
 function kgToLb(kg){ return kg*2.20462; }
 function lbToKg(lb){ return lb/2.20462; }
 function cmToFtIn(cm){ const totalIn = cm/2.54; const ft=Math.floor(totalIn/12); const inch=Math.round(totalIn%12); return {ft,inch}; }
@@ -635,10 +681,26 @@ document.getElementById("fastLoadMoreBtn").addEventListener("click", ()=>{
   renderFastHistory();
 });
 window.deleteFast = function(id){
-  state.fasts = state.fasts.filter(f=>f.id!==id);
+  const idx = state.fasts.findIndex(f=>f.id===id);
+  if(idx===-1) return;
+  const removed = state.fasts[idx];
+  state.fasts.splice(idx, 1);
   lsSet(LS.fasts, state.fasts);
   renderFastHistory(); renderFastChart();
-  if(sb && _currentUser) sb.from("fasting_logs").delete().eq("id", id).then(()=>{});
+  showUndoToast("Digiuno eliminato",
+    ()=>{ // annulla
+      state.fasts.splice(idx, 0, removed);
+      lsSet(LS.fasts, state.fasts);
+      renderFastHistory(); renderFastChart();
+    },
+    ()=>{ // conferma cancellazione definitiva
+      if(!sb || !_currentUser) return;
+      if(!navigator.onLine){ enqueueSync('fast', id, 'delete'); return; }
+      sb.from("fasting_logs").delete().eq("id", id).then(({error})=>{
+        if(error) enqueueSync('fast', id, 'delete');
+      }).catch(()=> enqueueSync('fast', id, 'delete'));
+    }
+  );
 };
 
 /* ─── Modale unico: edit storico digiuno o inserimento manuale passato ─── */
@@ -946,10 +1008,26 @@ document.getElementById("weightLoadMoreBtn").addEventListener("click", ()=>{
   renderWeightHistory();
 });
 window.deleteWeight = function(id){
-  state.weights = state.weights.filter(w=>w.id!==id);
+  const idx = state.weights.findIndex(w=>w.id===id);
+  if(idx===-1) return;
+  const removed = state.weights[idx];
+  state.weights.splice(idx, 1);
   lsSet(LS.weights, state.weights);
   renderWeightHistory(); renderWeightChart(); renderWeightCard();
-  if(sb && _currentUser) sb.from("weight_logs").delete().eq("id", id).then(()=>{});
+  showUndoToast("Misurazione eliminata",
+    ()=>{ // annulla
+      state.weights.splice(idx, 0, removed);
+      lsSet(LS.weights, state.weights);
+      renderWeightHistory(); renderWeightChart(); renderWeightCard();
+    },
+    ()=>{ // conferma cancellazione definitiva
+      if(!sb || !_currentUser) return;
+      if(!navigator.onLine){ enqueueSync('weight', id, 'delete'); return; }
+      sb.from("weight_logs").delete().eq("id", id).then(({error})=>{
+        if(error) enqueueSync('weight', id, 'delete');
+      }).catch(()=> enqueueSync('weight', id, 'delete'));
+    }
+  );
 };
 window.editWeight = function(id){
   const w = state.weights.find(x=>x.id===id);
@@ -1011,13 +1089,47 @@ document.getElementById("weightModalConfirm").addEventListener("click", async ()
 });
 
 let weightPeriod = "day";
+let weightZoom = 1; // scala dello slotW del grafico peso, regolabile con pinch (0.55–2.5)
 document.getElementById("weightPeriodSel").addEventListener("click", (e)=>{
   const b = e.target.closest("button"); if(!b) return;
   document.querySelectorAll("#weightPeriodSel button").forEach(x=>x.classList.remove("active"));
   b.classList.add("active");
   weightPeriod = b.dataset.p;
+  weightZoom = 1;
   renderWeightChart();
 });
+
+/* ─── Pinch-to-zoom sull'asse X del grafico peso ───
+   Due dita sul grafico allargano/restringono lo spazio tra gli slot
+   temporali (slotW), che è ciò che determina la larghezza totale del
+   grafico e quindi il "range" visibile scorrendo orizzontalmente. */
+(function setupWeightChartPinchZoom(){
+  const wrap = document.getElementById("weightChartWrap");
+  let startDist = null;
+  let startZoom = 1;
+  const dist = (t0, t1)=> Math.hypot(t0.clientX-t1.clientX, t0.clientY-t1.clientY);
+  wrap.addEventListener("touchstart", (e)=>{
+    if(e.touches.length===2){
+      startDist = dist(e.touches[0], e.touches[1]);
+      startZoom = weightZoom;
+    }
+  }, {passive:true});
+  wrap.addEventListener("touchmove", (e)=>{
+    if(e.touches.length===2 && startDist){
+      e.preventDefault();
+      const d = dist(e.touches[0], e.touches[1]);
+      let z = startZoom * (d/startDist);
+      z = Math.max(0.55, Math.min(2.5, z));
+      if(Math.abs(z-weightZoom) > 0.02){
+        weightZoom = z;
+        renderWeightChart();
+      }
+    }
+  }, {passive:false});
+  const endPinch = (e)=>{ if(e.touches.length<2) startDist = null; };
+  wrap.addEventListener("touchend", endPinch);
+  wrap.addEventListener("touchcancel", endPinch);
+})();
 
 function calcYTicks(minY, maxY){
   const range = maxY - minY;
@@ -1074,7 +1186,7 @@ function renderWeightChart(){
   minY -= margin; maxY += margin;
   const rangeY = maxY-minY;
 
-  const slotW = weightPeriod==="day" ? 28 : 44;
+  const slotW = (weightPeriod==="day" ? 28 : 44) * weightZoom;
   const padL=42, padR=14, padT=16, padB=26;
   const n = points.length;
   const totalW = padL + padR + n*slotW;
@@ -1278,8 +1390,90 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 });
 
 /* ============ SUPABASE SYNC (best-effort, offline-first) ============ */
+
+/* ─── Coda di sincronizzazione in sospeso (offline queue) ───
+   Ogni modifica che fallisce (o che avviene mentre si è offline) finisce
+   qui invece di andare persa. Alla riconnessione (evento 'online' + poll
+   periodico + ad ogni login) la coda viene rigiocata leggendo lo stato
+   ATTUALE da `state` (non il valore al momento dell'azione), così se un
+   digiuno/peso è stato nel frattempo modificato di nuovo si sincronizza
+   sempre la versione più recente. Una entry per tipo+id: azioni successive
+   sullo stesso elemento sovrascrivono quella precedente in coda invece di
+   accumularsi. */
+const LS_QUEUE = "pd_pending_queue"; // [{type:'fast'|'activeFast'|'weight'|'height'|'gender', id, op:'upsert'|'delete', ts}]
+function getQueue(){ return lsGet(LS_QUEUE, []); }
+function setQueue(q){ lsSet(LS_QUEUE, q); }
+function enqueueSync(type, id, op){
+  const q = getQueue();
+  const idx = q.findIndex(x=>x.type===type && x.id===id);
+  const entry = {type, id, op, ts: Date.now()};
+  if(idx>=0) q[idx] = entry; else q.push(entry);
+  setQueue(q);
+  updatePendingIndicator();
+}
+function updatePendingIndicator(){
+  const dot = document.getElementById("syncDot2");
+  if(!dot) return;
+  const pending = getQueue().length > 0;
+  dot.classList.toggle("syncing", pending);
+}
+async function processQueueEntry(entry){
+  const {type, id, op} = entry;
+  try{
+    if(type==="fast"){
+      if(op==="delete"){ await sb.from("fasting_logs").delete().eq("id", id); return true; }
+      const f = state.fasts.find(x=>x.id===id);
+      if(!f) return true; // già rimosso/non più presente: niente da fare
+      await sb.from("fasting_logs").upsert({id: f.id, user_id: _currentUser.id, start_at: f.start_at, end_at: f.end_at}, {onConflict:"id"});
+      return true;
+    }
+    if(type==="activeFast"){
+      if(!state.activeFast || state.activeFast.id!==id) return true; // digiuno concluso/cambiato nel frattempo
+      await sb.from("fasting_logs").upsert({id: state.activeFast.id, user_id: _currentUser.id, start_at: state.activeFast.start_at, end_at: null}, {onConflict:"id"});
+      return true;
+    }
+    if(type==="weight"){
+      if(op==="delete"){ await sb.from("weight_logs").delete().eq("id", id); return true; }
+      const w = state.weights.find(x=>x.id===id);
+      if(!w) return true;
+      await sb.from("weight_logs").upsert({id: w.id, user_id: _currentUser.id, weight_kg: w.weight_kg, at: w.at}, {onConflict:"id"});
+      return true;
+    }
+    if(type==="height"){
+      await sb.from("profiles").upsert({id: _currentUser.id, height_cm: state.height}, {onConflict:"id"});
+      return true;
+    }
+    if(type==="gender"){
+      await sb.from("profiles").upsert({id: _currentUser.id, gender: state.gender}, {onConflict:"id"});
+      return true;
+    }
+  }catch(e){ return false; }
+  return true;
+}
+let _processingQueue = false;
+async function processPendingQueue(){
+  if(_processingQueue) return;
+  if(!sb || !_currentUser || !navigator.onLine) return;
+  const q = getQueue();
+  if(q.length===0) return;
+  _processingQueue = true;
+  const remaining = [];
+  for(const entry of q){
+    const ok = await processQueueEntry(entry);
+    if(!ok) remaining.push(entry);
+  }
+  setQueue(remaining);
+  updatePendingIndicator();
+  setConnStatus(remaining.length===0);
+  if(remaining.length===0 && q.length>0) showToast("Sincronizzato");
+  _processingQueue = false;
+}
+window.addEventListener("online", ()=> processPendingQueue());
+setInterval(processPendingQueue, 20000); // rete che va e viene senza sparare l'evento 'online'
+
 async function syncFastToSupabase(fast, isUpdate){
   if(!_currentUser) return;
+  if(!navigator.onLine){ enqueueSync("fast", fast.id, "upsert"); setConnStatus(false); return; }
   try{
     if(isUpdate){
       await sb.from("fasting_logs").update({start_at: fast.start_at, end_at: fast.end_at}).eq("id", fast.id);
@@ -1287,10 +1481,11 @@ async function syncFastToSupabase(fast, isUpdate){
       await sb.from("fasting_logs").upsert({id: fast.id, user_id: _currentUser.id, start_at: fast.start_at, end_at: fast.end_at}, {onConflict:"id"});
     }
     setConnStatus(true);
-  }catch(e){ setConnStatus(false); }
+  }catch(e){ setConnStatus(false); enqueueSync("fast", fast.id, "upsert"); }
 }
 async function syncActiveFastStart(activeFast, isUpdate){
   if(!_currentUser) return;
+  if(!navigator.onLine){ enqueueSync("activeFast", activeFast.id, "upsert"); setConnStatus(false); return; }
   try{
     if(isUpdate){
       await sb.from("fasting_logs").update({start_at: activeFast.start_at}).eq("id", activeFast.id);
@@ -1299,10 +1494,11 @@ async function syncActiveFastStart(activeFast, isUpdate){
       await sb.from("fasting_logs").upsert({id: activeFast.id, user_id: _currentUser.id, start_at: activeFast.start_at, end_at: null}, {onConflict:"id"});
     }
     setConnStatus(true);
-  }catch(e){ setConnStatus(false); }
+  }catch(e){ setConnStatus(false); enqueueSync("activeFast", activeFast.id, "upsert"); }
 }
 async function syncWeightToSupabase(w, isUpdate){
   if(!_currentUser) return;
+  if(!navigator.onLine){ enqueueSync("weight", w.id, "upsert"); setConnStatus(false); return; }
   try{
     if(isUpdate){
       await sb.from("weight_logs").update({weight_kg: w.weight_kg, at: w.at}).eq("id", w.id);
@@ -1310,7 +1506,7 @@ async function syncWeightToSupabase(w, isUpdate){
       await sb.from("weight_logs").upsert({id: w.id, user_id: _currentUser.id, weight_kg: w.weight_kg, at: w.at}, {onConflict:"id"});
     }
     setConnStatus(true);
-  }catch(e){ setConnStatus(false); }
+  }catch(e){ setConnStatus(false); enqueueSync("weight", w.id, "upsert"); }
 }
 async function loadHeightFromSupabase(){
   if(!_currentUser) return;
@@ -1333,19 +1529,22 @@ async function loadHeightFromSupabase(){
 }
 async function saveHeightToSupabase(cm){
   if(!_currentUser) return;
+  if(!navigator.onLine){ enqueueSync("height", _currentUser.id, "upsert"); return; }
   try{
     await sb.from("profiles").upsert({id: _currentUser.id, height_cm: cm}, {onConflict:"id"});
-  }catch(e){}
+  }catch(e){ enqueueSync("height", _currentUser.id, "upsert"); }
 }
 async function saveGenderToSupabase(gender){
   if(!_currentUser) return;
+  if(!navigator.onLine){ enqueueSync("gender", _currentUser.id, "upsert"); return; }
   try{
     await sb.from("profiles").upsert({id: _currentUser.id, gender}, {onConflict:"id"});
-  }catch(e){}
+  }catch(e){ enqueueSync("gender", _currentUser.id, "upsert"); }
 }
 function setConnStatus(ok){
   const dot = document.getElementById("syncDot2");
   if(dot) dot.classList.toggle("error", !ok);
+  updatePendingIndicator();
 }
 
 async function pullFromSupabase(){
@@ -1443,8 +1642,10 @@ function init(){
   renderWeightHistory();
   renderWeightChart();
   setConnStatus(true);
+  updatePendingIndicator();
   pullFromSupabase();
   loadHeightFromSupabase();
+  processPendingQueue();
 
   if(fastTimerInterval) clearInterval(fastTimerInterval);
   fastTimerInterval = setInterval(updateFastTimer, 1000);
