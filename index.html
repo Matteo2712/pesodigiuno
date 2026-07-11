@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <title>PesoDigiuno</title>
 <link rel="manifest" href="manifest.json">
@@ -19,7 +19,8 @@
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; padding:0; background:var(--bg); color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    touch-action:pan-x pan-y; -ms-touch-action:pan-x pan-y;}
   body{padding-bottom:84px; min-height:100vh;}
   header.top{position:sticky; top:0; z-index:20; background:rgba(15,23,42,.92);
     backdrop-filter:blur(10px); padding:14px 18px; border-bottom:1px solid var(--border);
@@ -123,7 +124,7 @@
   .tooltip-pt{position:absolute; background:var(--card2); border:1px solid var(--border); color:var(--text);
     padding:6px 10px; border-radius:8px; font-size:12px; pointer-events:none; z-index:5; white-space:nowrap;
     transform:translate(-50%,-115%); box-shadow:0 4px 12px rgba(0,0,0,.3);}
-  .chart-wrap{position:relative; overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x;}
+  .chart-wrap{position:relative; overflow-x:auto; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y;}
   .chart-wrap::-webkit-scrollbar{height:4px;}
   .chart-wrap::-webkit-scrollbar-thumb{background:var(--border); border-radius:4px;}
   .y-axis-fixed{position:absolute; left:0; top:0; height:180px; width:44px; pointer-events:none; z-index:3;
@@ -1089,7 +1090,7 @@ document.getElementById("weightModalConfirm").addEventListener("click", async ()
 });
 
 let weightPeriod = "day";
-let weightZoom = 1; // scala dello slotW del grafico peso, regolabile con pinch (0.55–2.5)
+let weightZoom = 1; // scala dello slotW del grafico peso, regolabile con pinch (0.15–8)
 document.getElementById("weightPeriodSel").addEventListener("click", (e)=>{
   const b = e.target.closest("button"); if(!b) return;
   document.querySelectorAll("#weightPeriodSel button").forEach(x=>x.classList.remove("active"));
@@ -1119,7 +1120,7 @@ document.getElementById("weightPeriodSel").addEventListener("click", (e)=>{
       e.preventDefault();
       const d = dist(e.touches[0], e.touches[1]);
       let z = startZoom * (d/startDist);
-      z = Math.max(0.55, Math.min(2.5, z));
+      z = Math.max(0.15, Math.min(8, z));
       if(Math.abs(z-weightZoom) > 0.02){
         weightZoom = z;
         renderWeightChart();
@@ -1468,8 +1469,16 @@ async function processPendingQueue(){
   if(remaining.length===0 && q.length>0) showToast("Sincronizzato");
   _processingQueue = false;
 }
-window.addEventListener("online", ()=> processPendingQueue());
-setInterval(processPendingQueue, 20000); // rete che va e viene senza sparare l'evento 'online'
+function checkConnDot(){
+  if(!navigator.onLine){ setConnStatus(false); return; }
+  // online lato browser: lo stato "vero" (verde/arancione) lo decide comunque
+  // processPendingQueue() se c'è roba in coda; qui aggiorniamo solo il caso
+  // "tutto sincronizzato" per non restare bloccati sul rosso dopo un ritorno online.
+  if(getQueue().length===0) setConnStatus(true);
+}
+window.addEventListener("online", ()=>{ checkConnDot(); processPendingQueue(); });
+window.addEventListener("offline", ()=> setConnStatus(false));
+setInterval(()=>{ checkConnDot(); processPendingQueue(); }, 5000); // rete che va e viene senza sparare l'evento 'online'/'offline'
 
 async function syncFastToSupabase(fast, isUpdate){
   if(!_currentUser) return;
@@ -1641,7 +1650,7 @@ function init(){
   renderWeightCard();
   renderWeightHistory();
   renderWeightChart();
-  setConnStatus(true);
+  setConnStatus(navigator.onLine);
   updatePendingIndicator();
   pullFromSupabase();
   loadHeightFromSupabase();
