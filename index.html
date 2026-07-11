@@ -521,20 +521,18 @@ function cmToFtIn(cm){ const totalIn = cm/2.54; const ft=Math.floor(totalIn/12);
 function ftInToCm(ft,inch){ return (ft*12+inch)*2.54; }
 
 /* ============ TABS ============ */
+function setActiveTab(view){
+  document.querySelectorAll(".tab").forEach(t=> t.classList.toggle("active", t.dataset.view===view));
+  document.querySelectorAll(".view").forEach(v=> v.classList.toggle("active", v.id==="view-"+view));
+  try{ sessionStorage.setItem("pd_last_tab", view); }catch(e){}
+  if(view==="fast") renderFastChart();
+  if(view==="weight") renderWeightChart();
+}
 document.querySelectorAll(".tab").forEach(tab=>{
-  tab.addEventListener("click", ()=>{
-    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-    document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
-    tab.classList.add("active");
-    document.getElementById("view-"+tab.dataset.view).classList.add("active");
-    if(tab.dataset.view==="fast") renderFastChart();
-    if(tab.dataset.view==="weight") renderWeightChart();
-  });
+  tab.addEventListener("click", ()=> setActiveTab(tab.dataset.view));
 });
 function openSettings(){
-  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
-  document.getElementById("view-settings").classList.add("active");
+  setActiveTab("settings");
 }
 
 /* ============ TIME MODAL (generic confirm) ============ */
@@ -1090,7 +1088,7 @@ document.getElementById("weightModalConfirm").addEventListener("click", async ()
 });
 
 let weightPeriod = "day";
-let weightZoom = 1; // scala dello slotW del grafico peso, regolabile con pinch (0.15–8)
+let weightZoom = 1; // scala dello slotW del grafico peso, regolabile con pinch (0.12–1.6; più peso allo zoom-out)
 document.getElementById("weightPeriodSel").addEventListener("click", (e)=>{
   const b = e.target.closest("button"); if(!b) return;
   document.querySelectorAll("#weightPeriodSel button").forEach(x=>x.classList.remove("active"));
@@ -1120,10 +1118,10 @@ document.getElementById("weightPeriodSel").addEventListener("click", (e)=>{
       e.preventDefault();
       const d = dist(e.touches[0], e.touches[1]);
       let z = startZoom * (d/startDist);
-      z = Math.max(0.15, Math.min(8, z));
-      if(Math.abs(z-weightZoom) > 0.02){
+      z = Math.max(0.12, Math.min(1.6, z));
+      if(Math.abs(z-weightZoom) > 0.01){
         weightZoom = z;
-        renderWeightChart();
+        renderWeightChart(true);
       }
     }
   }, {passive:false});
@@ -1149,10 +1147,25 @@ function calcYTicks(minY, maxY){
   return ticks;
 }
 
-function renderWeightChart(){
+function renderWeightChart(preserveCenter){
   const svg = document.getElementById("weightChart");
   const wrap = document.getElementById("weightChartWrap");
   wrap.querySelectorAll(".tooltip-pt").forEach(t=>t.remove());
+
+  // Se richiesto (zoom pinch), calcola PRIMA di ricostruire il grafico quale
+  // punto del range temporale era al centro della vista, usando le
+  // dimensioni del render precedente salvate in svg.dataset.
+  let centerFrac = null;
+  if(preserveCenter && svg.dataset.slotW){
+    const oldSlotW = parseFloat(svg.dataset.slotW);
+    const oldPadL = parseFloat(svg.dataset.padL);
+    const oldN = parseFloat(svg.dataset.n);
+    if(oldSlotW && oldN){
+      const viewCenter = wrap.scrollLeft + wrap.clientWidth/2;
+      centerFrac = (viewCenter - oldPadL) / (oldN*oldSlotW);
+    }
+  }
+
   if(state.weights.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; document.getElementById("weightYAxisFixed").innerHTML=""; return; }
 
   let slots;
@@ -1192,6 +1205,7 @@ function renderWeightChart(){
   const n = points.length;
   const totalW = padL + padR + n*slotW;
   const H = 180;
+  svg.dataset.slotW = slotW; svg.dataset.padL = padL; svg.dataset.n = n;
 
   const px = (i)=> padL + i*slotW + slotW/2;
   const py = (y)=> padT + (1-(y-minY)/rangeY)*(H-padT-padB);
@@ -1271,10 +1285,15 @@ function renderWeightChart(){
     dot.addEventListener("mouseenter", show);
   });
 
-  wrap.scrollLeft = wrap.scrollWidth;
+  if(centerFrac !== null){
+    const newCenter = padL + centerFrac*(n*slotW);
+    let newScrollLeft = newCenter - wrap.clientWidth/2;
+    newScrollLeft = Math.max(0, Math.min(wrap.scrollWidth - wrap.clientWidth, newScrollLeft));
+    wrap.scrollLeft = newScrollLeft;
+  } else {
+    wrap.scrollLeft = wrap.scrollWidth;
+  }
 }
-
-/* ============ SETTINGS ============ */
 document.getElementById("unitSeg").addEventListener("click", (e)=>{
   const b = e.target.closest("button"); if(!b) return;
   document.querySelectorAll("#unitSeg button").forEach(x=>x.classList.remove("active"));
@@ -1625,6 +1644,7 @@ async function doLogout(){
   await sb.auth.signOut();
   _currentUser=null;
   clearInterval(fastTimerInterval);
+  try{ sessionStorage.removeItem("pd_last_tab"); }catch(e){}
   document.getElementById('appRoot').style.display='none';
   document.getElementById('loginScreen').classList.add('active');
 }
@@ -1658,6 +1678,13 @@ function init(){
 
   if(fastTimerInterval) clearInterval(fastTimerInterval);
   fastTimerInterval = setInterval(updateFastTimer, 1000);
+
+  // Refresh manuale nella stessa sessione del browser: resta sulla vista che
+  // si stava guardando. Apertura nuova dell'app (nuova sessione): resta il
+  // default "digiuno" già impostato via HTML.
+  let savedTab = null;
+  try{ savedTab = sessionStorage.getItem("pd_last_tab"); }catch(e){}
+  if(savedTab && savedTab!=="fast") setActiveTab(savedTab);
 }
 
 /* ============ INIT AUTH ============ */
