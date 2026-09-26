@@ -1169,9 +1169,26 @@ function renderWeightChart(preserveCenter){
   if(state.weights.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; document.getElementById("weightYAxisFixed").innerHTML=""; return; }
 
   let slots;
-  if(weightPeriod==="day") slots = buildDaySlots(30);
-  else if(weightPeriod==="week") slots = buildWeekSlots(30);
-  else slots = buildMonthSlots(30);
+  {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const earliest = new Date(Math.min(...state.weights.map(w=> new Date(w.at).getTime())));
+    earliest.setHours(0,0,0,0);
+    let count = 30;
+    if(weightPeriod==="day"){
+      const daysSpan = Math.round((today-earliest)/86400000) + 1;
+      count = Math.max(30, daysSpan);
+    } else if(weightPeriod==="week"){
+      const mondayOf = (d)=>{ const m=new Date(d); m.setDate(d.getDate()-((d.getDay()+6)%7)); return m; };
+      const weeksSpan = Math.round((mondayOf(today)-mondayOf(earliest))/(7*86400000)) + 1;
+      count = Math.max(30, weeksSpan);
+    } else {
+      const monthsSpan = (today.getFullYear()-earliest.getFullYear())*12 + (today.getMonth()-earliest.getMonth()) + 1;
+      count = Math.max(30, monthsSpan);
+    }
+    if(weightPeriod==="day") slots = buildDaySlots(count);
+    else if(weightPeriod==="week") slots = buildWeekSlots(count);
+    else slots = buildMonthSlots(count);
+  }
 
   const byKey = {};
   state.weights.forEach(w=>{
