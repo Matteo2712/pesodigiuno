@@ -1169,9 +1169,9 @@ function renderWeightChart(preserveCenter){
   if(state.weights.length===0){ svg.innerHTML = '<text x="160" y="90" fill="#8d97b8" font-size="12" text-anchor="middle">Nessun dato</text>'; document.getElementById("weightYAxisFixed").innerHTML=""; return; }
 
   let slots;
-  if(weightPeriod==="day") slots = buildDaySlots(60);
-  else if(weightPeriod==="week") slots = buildWeekSlots(24);
-  else slots = buildMonthSlots(12);
+  if(weightPeriod==="day") slots = buildDaySlots(30);
+  else if(weightPeriod==="week") slots = buildWeekSlots(30);
+  else slots = buildMonthSlots(30);
 
   const byKey = {};
   state.weights.forEach(w=>{
